@@ -1,0 +1,16 @@
+{
+  "name": "mirogd-server",
+  "version": "0.1.0",
+  "description": "미로 속 경찰과 도둑 - 게임 서버",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "socket.io": "^4.7.5"
+  }
+}

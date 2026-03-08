@@ -1,0 +1,148 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  min-height: 44px;
+}
+
+.role {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+}
+
+.canvasWrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  touch-action: none;
+}
+
+.canvas {
+  width: 100%;
+  max-width: min(95vmin, 400px);
+  aspect-ratio: 1;
+  max-height: 50vh;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+}
+
+.pixiContainer {
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  max-width: min(95vmin, 400px);
+  aspect-ratio: 1;
+  max-height: 50vh;
+  border-radius: 12px;
+  background: #d4d0c4;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+  overflow: hidden;
+}
+
+.resultOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 2rem;
+  z-index: 10;
+}
+
+.resultText {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.lobbyButton {
+  padding: 1rem 2rem;
+  min-height: 52px;
+  background: var(--success);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.waitHint,
+.autoLobbyHint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* 모바일 방향 패드: 터치 영역 크게 */
+.pad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.padRow {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.padBtn,
+.padBtnEmpty {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.padBtn {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  color: var(--text);
+  transition: background 0.15s, transform 0.1s;
+}
+.padBtn:active {
+  background: var(--accent);
+  color: #fff;
+  transform: scale(0.95);
+}
+
+.padBtnEmpty {
+  background: transparent;
+  pointer-events: none;
+  visibility: hidden;
+}

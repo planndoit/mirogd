@@ -1,0 +1,11 @@
+{
+  "name": "mirogd",
+  "version": "0.1.0",
+  "private": true,
+  "description": "미로 속 경찰과 도둑 - 온라인 미로 추격 게임",
+  "scripts": {
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install"
+  }
+}

@@ -1,0 +1,96 @@
+.main {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2rem;
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.back:hover {
+  color: var(--accent);
+}
+
+.title {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0 0 1.5rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.input,
+.select {
+  padding: 0.875rem 1rem;
+  min-height: 48px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  outline: none;
+  font-size: 16px;
+}
+.input:focus,
+.select:focus {
+  border-color: var(--accent);
+}
+
+.select {
+  cursor: pointer;
+}
+
+.error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
+.submit {
+  margin-top: 0.5rem;
+  padding: 1rem;
+  min-height: 48px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-weight: 600;
+  transition: background 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.submit:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.submit:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
