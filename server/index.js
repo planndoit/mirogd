@@ -40,7 +40,27 @@ function startPositionBroadcast(roomId) {
   if (!room?.game || room.game.moveIntervalId) return;
   const id = setInterval(() => {
     const r = getRoom(roomId);
-    if (!r?.game || (r.status !== 'preparing' && r.status !== 'playing')) {
+    if (!r?.game) {
+      clearInterval(id);
+      return;
+    }
+    if (r.status === 'ended' && r.game.winner) {
+      io.to(roomId).emit('game:ended', { winner: r.game.winner });
+      io.to(roomId).emit('room:updated', serializeRoom(r));
+      clearInterval(id);
+      r.game.moveIntervalId = null;
+      const AUTO_LOBBY_MS = 5000;
+      setTimeout(() => {
+        const rr = getRoom(roomId);
+        if (rr?.status === 'ended') {
+          resetRoomToLobby(roomId);
+          const updated = getRoom(roomId);
+          if (updated) io.to(roomId).emit('room:updated', serializeRoom(updated));
+        }
+      }, AUTO_LOBBY_MS);
+      return;
+    }
+    if (r.status !== 'preparing' && r.status !== 'playing') {
       clearInterval(id);
       if (r?.game) r.game.moveIntervalId = null;
       return;
@@ -161,7 +181,12 @@ io.on('connection', (socket) => {
     socket.data.nickname = null;
     socket.data.isHost = false;
     socket.data.asSpectator = false;
-    if (room) io.to(roomId).emit('room:updated', serializeRoom(room));
+    if (room) {
+      io.to(roomId).emit('room:updated', serializeRoom(room));
+      if (room.status === 'ended' && room.game?.winner) {
+        io.to(roomId).emit('game:ended', { winner: room.game.winner });
+      }
+    }
   });
 
   socket.on('room:updateSettings', (payload, ack) => {

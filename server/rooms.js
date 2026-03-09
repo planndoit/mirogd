@@ -62,6 +62,47 @@ function cleanupGameParticipant(room, socketId) {
   room.game.caughtThieves = room.game.caughtThieves.filter((id) => id !== socketId);
 }
 
+function cancelPreparingGame(room) {
+  if (!room?.game) return;
+  if (room.game.moveIntervalId) {
+    clearInterval(room.game.moveIntervalId);
+    room.game.moveIntervalId = null;
+  }
+  room.status = 'waiting';
+  room.game = null;
+  room.players.forEach((player) => {
+    player.role = null;
+  });
+}
+
+function applyLeaveOutcome(room) {
+  if (!room?.game) return;
+
+  if (room.status === 'preparing') {
+    cancelPreparingGame(room);
+    return;
+  }
+
+  if (room.status !== 'playing' || room.game.winner) return;
+
+  const policeCount = room.players.filter((player) => room.game.roles[player.socketId] === 'police').length;
+  const thiefCount = room.players.filter((player) => room.game.roles[player.socketId] === 'thief').length;
+
+  if (thiefCount === 0) {
+    room.game.winner = 'police';
+    room.status = 'ended';
+    return;
+  }
+
+  if (policeCount === 0) {
+    room.game.winner = 'thief';
+    room.status = 'ended';
+    return;
+  }
+
+  checkGameEnd(room);
+}
+
 function remapGameParticipant(room, previousSocketId, nextSocketId) {
   if (!room?.game || !previousSocketId || previousSocketId === nextSocketId) return;
 
@@ -93,11 +134,15 @@ function finalizeLeaveBySession(roomId, sessionId) {
   cleanupGameParticipant(room, participant.socketId);
 
   if (room.players.length === 0) {
+    if (room.game?.moveIntervalId) clearInterval(room.game.moveIntervalId);
     rooms.delete(roomId);
     return null;
   }
 
   syncHost(room);
+  if (participant.type === 'player') {
+    applyLeaveOutcome(room);
+  }
   return room;
 }
 

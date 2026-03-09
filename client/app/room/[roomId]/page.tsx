@@ -51,6 +51,7 @@ export default function RoomPage() {
   const joinedRef = useRef(false);
   const lastSocketIdRef = useRef('');
   const skipNextConnectJoinRef = useRef(false);
+  const leaveHandledRef = useRef(false);
   const previousStatusRef = useRef<string | null>(null);
   const previousWinnerRef = useRef<'police' | 'thief' | null>(null);
   const wasCaughtRef = useRef(false);
@@ -254,13 +255,19 @@ export default function RoomPage() {
     joinCurrentRoom(joinNickname);
   };
 
-  const handleLeave = () => {
-    void playSfx('tap');
+  const emitExplicitLeave = useCallback(() => {
+    if (leaveHandledRef.current || !joinedRef.current) return;
     const socket = getSocket();
+    leaveHandledRef.current = true;
     joinedRef.current = false;
     lastSocketIdRef.current = '';
     clearRoomSession(roomId);
     socket.emit('room:leave');
+  }, [roomId]);
+
+  const handleLeave = () => {
+    void playSfx('tap');
+    emitExplicitLeave();
     setRoom(null);
     setNeedsJoin(true);
     setMyNickname('');
@@ -303,6 +310,16 @@ export default function RoomPage() {
   };
 
   const showGame = (room?.status === 'preparing' || room?.status === 'playing' || room?.status === 'ended') && (gameState ?? room?.game);
+
+  useEffect(() => {
+    leaveHandledRef.current = false;
+  }, [roomId]);
+
+  useEffect(() => {
+    return () => {
+      emitExplicitLeave();
+    };
+  }, [emitExplicitLeave]);
 
   const shareLink = typeof window !== 'undefined' ? `${window.location.origin}/room/${roomId}` : '';
 
