@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getSocket } from '@/lib/socket';
 import { getClientSessionId, saveRoomSession } from '@/lib/session';
+import { playSfx } from '@/lib/sfx';
 import styles from './page.module.css';
 
 export default function CreateRoomPage() {
@@ -18,6 +19,7 @@ export default function CreateRoomPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    void playSfx('tap');
     const nick = nickname.trim();
     if (!nick) {
       setError('닉네임을 입력해 주세요.');
@@ -39,6 +41,7 @@ export default function CreateRoomPage() {
       (res: { success?: boolean; error?: string; roomId?: string; room?: unknown }) => {
         setLoading(false);
         if (res?.success && res.roomId && res.room) {
+          void playSfx('join');
           saveRoomSession({ roomId: res.roomId, nickname: nick });
           try {
             sessionStorage.setItem(
@@ -62,7 +65,7 @@ export default function CreateRoomPage() {
   return (
     <main className={styles.main}>
       <div className={styles.card}>
-        <Link href="/" className={styles.back}>
+        <Link href="/" className={styles.back} onClick={() => { void playSfx('tap'); }}>
           ← 첫 화면
         </Link>
         <h1 className={styles.title}>방 만들기</h1>

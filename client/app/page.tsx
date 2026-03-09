@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { playSfx } from '@/lib/sfx';
 import styles from './page.module.css';
 
 const API_URL = process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3001';
@@ -57,7 +58,7 @@ export default function HomePage() {
           방을 만들거나 목록에서 방을 골라 입장하세요.
         </p>
 
-        <Link href="/create" className={styles.primaryButton}>
+        <Link href="/create" className={styles.primaryButton} onClick={() => { void playSfx('tap'); }}>
           방 만들기
         </Link>
 
@@ -72,7 +73,7 @@ export default function HomePage() {
             <ul className={styles.roomList}>
               {rooms.map((room) => (
                 <li key={room.roomId}>
-                  <Link href={`/room/${room.roomId}`} className={styles.roomItem}>
+                  <Link href={`/room/${room.roomId}`} className={styles.roomItem} onClick={() => { void playSfx('tap'); }}>
                     <span className={styles.roomName}>{room.roomName}</span>
                     <span className={styles.roomMeta}>
                       {room.playerCount}/{room.maxPlayers}명

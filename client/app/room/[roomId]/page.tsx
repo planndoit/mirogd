@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { getSocket } from '@/lib/socket';
 import { clearRoomSession, getClientSessionId, getRoomSession, saveRoomSession } from '@/lib/session';
+import { playSfx } from '@/lib/sfx';
 import GameView from '@/components/GameView';
 import styles from './page.module.css';
 
@@ -50,6 +51,9 @@ export default function RoomPage() {
   const joinedRef = useRef(false);
   const lastSocketIdRef = useRef('');
   const skipNextConnectJoinRef = useRef(false);
+  const previousStatusRef = useRef<string | null>(null);
+  const previousWinnerRef = useRef<'police' | 'thief' | null>(null);
+  const wasCaughtRef = useRef(false);
 
   const applyJoinSuccess = useCallback(
     (nickname: string, joinedRoom: Room, spectator: boolean) => {
@@ -89,6 +93,7 @@ export default function RoomPage() {
           setJoinLoading(false);
           if (options?.silent) setRestoringSession(false);
           if (res?.success && res.room) {
+            if (!options?.silent) void playSfx('join');
             applyJoinSuccess(nick, res.room, res.asSpectator ?? false);
             return;
           }
@@ -166,6 +171,17 @@ export default function RoomPage() {
       setGameState((prev) => (prev ? { ...prev, positions } : null));
     };
 
+    const onGameCaught = (payload: { caughtThieves?: string[] }) => {
+      if (!Array.isArray(payload?.caughtThieves)) return;
+      setGameState((prev) => (prev ? { ...prev, caughtThieves: payload.caughtThieves ?? [] } : prev));
+    };
+
+    const onGameEnded = (payload: { winner?: 'police' | 'thief' }) => {
+      const winner = payload?.winner ?? null;
+      if (!winner) return;
+      setGameState((prev) => (prev ? { ...prev, winner } : prev));
+    };
+
     const onConnect = () => {
       const nextSocketId = socket.id ?? '';
       const previousSocketId = lastSocketIdRef.current;
@@ -189,22 +205,57 @@ export default function RoomPage() {
     socket.on('room:updated', onUpdated);
     socket.on('game:state', onGameState);
     socket.on('game:positions', onGamePositions);
+    socket.on('game:caught', onGameCaught);
+    socket.on('game:ended', onGameEnded);
     socket.on('connect', onConnect);
     if (socket.connected) onConnect();
     return () => {
       socket.off('room:updated', onUpdated);
       socket.off('game:state', onGameState);
       socket.off('game:positions', onGamePositions);
+      socket.off('game:caught', onGameCaught);
+      socket.off('game:ended', onGameEnded);
       socket.off('connect', onConnect);
     };
   }, [joinCurrentRoom, roomId]);
 
+  useEffect(() => {
+    const nextStatus = room?.status ?? null;
+    if (nextStatus === 'preparing' && previousStatusRef.current === 'waiting') {
+      void playSfx('start');
+    }
+    previousStatusRef.current = nextStatus;
+  }, [room?.status]);
+
+  useEffect(() => {
+    const isCaught = Boolean(mySocketId && gameState?.caughtThieves?.includes(mySocketId));
+    if (isCaught && !wasCaughtRef.current) {
+      void playSfx('caught');
+    }
+    wasCaughtRef.current = isCaught;
+  }, [gameState?.caughtThieves, mySocketId]);
+
+  useEffect(() => {
+    const winner = gameState?.winner ?? null;
+    if (winner && previousWinnerRef.current !== winner) {
+      const myRole = gameState?.roles?.[mySocketId];
+      if (!myRole) {
+        void playSfx('win');
+      } else {
+        void playSfx(myRole === winner ? 'win' : 'lose');
+      }
+    }
+    previousWinnerRef.current = winner;
+  }, [gameState?.roles, gameState?.winner, mySocketId]);
+
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
+    void playSfx('tap');
     joinCurrentRoom(joinNickname);
   };
 
   const handleLeave = () => {
+    void playSfx('tap');
     const socket = getSocket();
     joinedRef.current = false;
     lastSocketIdRef.current = '';
@@ -219,6 +270,7 @@ export default function RoomPage() {
   };
 
   const handleStartGame = () => {
+    void playSfx('tap');
     const socket = getSocket();
     socket.emit('game:start', (res: { success?: boolean; error?: string }) => {
       if (!res?.success && res?.error === 'need_at_least_2_players') {
@@ -237,10 +289,12 @@ export default function RoomPage() {
   };
 
   const handleBackToLobby = () => {
+    void playSfx('tap');
     getSocket().emit('game:backToLobby');
   };
 
   const handleUpdateSettings = (payload: { maxPlayers?: number; gameTimeSeconds?: number }) => {
+    void playSfx('tap');
     const socket = getSocket();
     socket.emit('room:updateSettings', payload, (res: { success?: boolean }) => {
       if (!res?.success) return;
@@ -291,7 +345,7 @@ export default function RoomPage() {
     return (
       <main className={styles.main}>
         <div className={styles.card}>
-          <Link href="/" className={styles.back}>
+          <Link href="/" className={styles.back} onClick={() => { void playSfx('tap'); }}>
             ← 첫 화면
           </Link>
           <h1 className={styles.title}>방 입장</h1>
@@ -335,6 +389,7 @@ export default function RoomPage() {
               type="button"
               className={styles.copyButton}
               onClick={() => {
+                void playSfx('tap');
                 navigator.clipboard.writeText(shareLink);
               }}
             >
