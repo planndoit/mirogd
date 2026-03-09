@@ -3,6 +3,13 @@
   padding: 1.5rem;
 }
 
+.gameMain {
+  min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  padding: 0;
+  overflow: hidden;
+}
+
 .card {
   max-width: 400px;
   margin: 2rem auto;

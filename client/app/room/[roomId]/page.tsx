@@ -263,7 +263,7 @@ export default function RoomPage() {
 
   if (showGame && gameState) {
     return (
-      <main className={styles.main}>
+      <main className={styles.gameMain}>
         <GameView
           game={gameState}
           players={room?.players ?? []}

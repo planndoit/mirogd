@@ -18,6 +18,7 @@ export default function VirtualJoystick({
   const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
   const [active, setActive] = useState(false);
   const lastMoveRef = useRef<{ x: number; y: number } | null>(null);
+  const activePointerIdRef = useRef<number | null>(null);
 
   const getCenter = useCallback(() => {
     const el = containerRef.current;
@@ -64,18 +65,21 @@ export default function VirtualJoystick({
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (disabled) return;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    containerRef.current?.setPointerCapture(e.pointerId);
+    activePointerIdRef.current = e.pointerId;
     setActive(true);
     updateFromClient(e.clientX, e.clientY);
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (!active || disabled) return;
+    if (!active || disabled || activePointerIdRef.current !== e.pointerId) return;
     updateFromClient(e.clientX, e.clientY);
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
-    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    if (activePointerIdRef.current !== e.pointerId) return;
+    containerRef.current?.releasePointerCapture(e.pointerId);
+    activePointerIdRef.current = null;
     setActive(false);
     setKnobPos({ x: 0, y: 0 });
     lastMoveRef.current = { x: 0, y: 0 };
@@ -90,7 +94,6 @@ export default function VirtualJoystick({
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
       onPointerCancel={handlePointerUp}
     >
       <div className={styles.outer} />
