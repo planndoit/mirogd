@@ -24,5 +24,4 @@
   border: 2px solid rgba(0, 0, 0, 0.15);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
   pointer-events: none;
-  transition: transform 0.05s ease-out;
 }

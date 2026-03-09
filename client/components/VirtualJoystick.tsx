@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, useCallback } from 'react';
+import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import styles from './VirtualJoystick.module.css';
 
 const RADIUS = 70;
@@ -38,6 +38,15 @@ export default function VirtualJoystick({
     const scale = (RADIUS - KNOB_RADIUS) / dist;
     return { x: dx * scale, y: dy * scale };
   };
+
+  const resetJoystick = useCallback(() => {
+    activePointerIdRef.current = null;
+    activeTouchIdRef.current = null;
+    setActive(false);
+    setKnobPos({ x: 0, y: 0 });
+    lastMoveRef.current = { x: 0, y: 0 };
+    onMove(0, 0);
+  }, [onMove]);
 
   const updateFromClient = useCallback(
     (clientX: number, clientY: number) => {
@@ -87,11 +96,7 @@ export default function VirtualJoystick({
     if (useTouchEvents) return;
     if (activePointerIdRef.current !== e.pointerId) return;
     containerRef.current?.releasePointerCapture(e.pointerId);
-    activePointerIdRef.current = null;
-    setActive(false);
-    setKnobPos({ x: 0, y: 0 });
-    lastMoveRef.current = { x: 0, y: 0 };
-    onMove(0, 0);
+    resetJoystick();
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -115,12 +120,74 @@ export default function VirtualJoystick({
     if (!useTouchEvents || activeTouchIdRef.current === null) return;
     const touch = Array.from(e.changedTouches).find((item) => item.identifier === activeTouchIdRef.current);
     if (!touch) return;
-    activeTouchIdRef.current = null;
-    setActive(false);
-    setKnobPos({ x: 0, y: 0 });
-    lastMoveRef.current = { x: 0, y: 0 };
-    onMove(0, 0);
+    resetJoystick();
   };
+
+  useEffect(() => {
+    if (disabled) {
+      resetJoystick();
+    }
+  }, [disabled, resetJoystick]);
+
+  useEffect(() => {
+    if (!active) return;
+
+    const handleWindowBlur = () => {
+      resetJoystick();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) resetJoystick();
+    };
+
+    if (useTouchEvents) {
+      const handleWindowTouchMove = (event: TouchEvent) => {
+        if (activeTouchIdRef.current === null) return;
+        const touch = Array.from(event.changedTouches).find((item) => item.identifier === activeTouchIdRef.current);
+        if (!touch) return;
+        event.preventDefault();
+        updateFromClient(touch.clientX, touch.clientY);
+      };
+
+      const handleWindowTouchEnd = (event: TouchEvent) => {
+        if (activeTouchIdRef.current === null) return;
+        const touch = Array.from(event.changedTouches).find((item) => item.identifier === activeTouchIdRef.current);
+        if (!touch) return;
+        resetJoystick();
+      };
+
+      window.addEventListener('touchmove', handleWindowTouchMove, { passive: false });
+      window.addEventListener('touchend', handleWindowTouchEnd);
+      window.addEventListener('touchcancel', handleWindowTouchEnd);
+      window.addEventListener('blur', handleWindowBlur);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+
+      return () => {
+        window.removeEventListener('touchmove', handleWindowTouchMove);
+        window.removeEventListener('touchend', handleWindowTouchEnd);
+        window.removeEventListener('touchcancel', handleWindowTouchEnd);
+        window.removeEventListener('blur', handleWindowBlur);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
+    }
+
+    const handleWindowPointerUp = (event: PointerEvent) => {
+      if (activePointerIdRef.current !== event.pointerId) return;
+      resetJoystick();
+    };
+
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerUp);
+    window.addEventListener('blur', handleWindowBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('pointercancel', handleWindowPointerUp);
+      window.removeEventListener('blur', handleWindowBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [active, resetJoystick, updateFromClient, useTouchEvents]);
 
   return (
     <div
