@@ -19,7 +19,7 @@ type Player = { socketId: string; nickname: string };
 
 const WALL = 1;
 const PATH = 0;
-const LERP = 0.2;
+const LERP = 1;
 
 export default function GameView({
   game,
@@ -34,7 +34,7 @@ export default function GameView({
   players: Player[];
   spectators: { socketId: string; nickname: string }[];
   mySocketId: string;
-  onMove: (angle: number, moving: boolean) => void;
+  onMove: (x: number, y: number) => void;
   onBackToLobby: () => void;
   isHost: boolean;
 }) {
@@ -55,7 +55,17 @@ export default function GameView({
     let mazeGraphics: import('pixi.js').Graphics;
     let charactersContainer: import('pixi.js').Container;
     const displayPos = new Map<string, { x: number; y: number }>();
-    const characterNodes = new Map<string, { container: import('pixi.js').Container; circle: import('pixi.js').Graphics; label: import('pixi.js').Text }>();
+    const characterNodes = new Map<
+      string,
+      {
+        container: import('pixi.js').Container;
+        shadow: import('pixi.js').Graphics;
+        body: import('pixi.js').Graphics;
+        labelBg: import('pixi.js').Graphics;
+        label: import('pixi.js').Text;
+        roleMark: import('pixi.js').Text;
+      }
+    >();
 
     const init = async () => {
       const PIXI = await import('pixi.js');
@@ -109,11 +119,14 @@ export default function GameView({
         const cellSize = getCellSize();
         const offsetX = (app.renderer.width - cols * cellSize) / 2;
         const offsetY = (app.renderer.height - rows * cellSize) / 2;
-        const gap = Math.max(1, cellSize * 0.06);
-        const radius = Math.max(2, cellSize * 0.12);
-        const PATH_FILL = 0xe8e4d9;
-        const WALL_FILL = 0x6b5344;
-        const WALL_HIGHLIGHT = 0x8b7355;
+        const gap = Math.max(1, Math.floor(cellSize * 0.08));
+        const inset = gap / 2;
+        const PATH_LIGHT = 0x90c267;
+        const PATH_DARK = 0x6da050;
+        const PATH_MOSS = 0x52793a;
+        const WALL_TOP = 0x8a6a46;
+        const WALL_SIDE = 0x5e4731;
+        const WALL_EDGE = 0xb58b60;
 
         const cell = (r: number, c: number) => {
           if (r < 0 || r >= rows || c < 0 || c >= cols) return WALL;
@@ -122,19 +135,23 @@ export default function GameView({
 
         for (let r = 0; r < rows; r++) {
           for (let c = 0; c < cols; c++) {
-            const x = offsetX + c * cellSize + gap / 2;
-            const y = offsetY + r * cellSize + gap / 2;
+            const x = offsetX + c * cellSize + inset;
+            const y = offsetY + r * cellSize + inset;
             const w = cellSize - gap;
             const h = cellSize - gap;
             if (cell(r, c) === PATH) {
-              mazeGraphics.roundRect(x, y, w, h, radius).fill({ color: PATH_FILL });
+              const baseColor = (r + c) % 2 === 0 ? PATH_LIGHT : PATH_DARK;
+              mazeGraphics.rect(x, y, w, h).fill({ color: baseColor });
+              mazeGraphics.rect(x, y, w, Math.max(2, h * 0.18)).fill({ color: 0xa6d97b, alpha: 0.45 });
+              mazeGraphics.rect(x + w * 0.12, y + h * 0.12, w * 0.16, h * 0.16).fill({ color: PATH_MOSS, alpha: 0.35 });
+              mazeGraphics.rect(x + w * 0.65, y + h * 0.58, w * 0.12, h * 0.12).fill({ color: 0xcfe7a4, alpha: 0.35 });
             } else {
-              mazeGraphics.roundRect(x, y, w, h, radius).fill({ color: WALL_FILL });
-              mazeGraphics.roundRect(x, y, w, h, radius).stroke({
-                width: 1,
-                color: WALL_HIGHLIGHT,
-                alignment: 0,
-              });
+              mazeGraphics.rect(x, y, w, h).fill({ color: WALL_SIDE });
+              mazeGraphics.rect(x, y, w, h * 0.72).fill({ color: WALL_TOP });
+              mazeGraphics.rect(x, y, w, Math.max(2, h * 0.14)).fill({ color: WALL_EDGE, alpha: 0.85 });
+              mazeGraphics.rect(x + w * 0.08, y + h * 0.24, w * 0.84, Math.max(1, h * 0.06)).fill({ color: WALL_EDGE, alpha: 0.3 });
+              mazeGraphics.rect(x + w * 0.08, y + h * 0.48, w * 0.84, Math.max(1, h * 0.06)).fill({ color: WALL_EDGE, alpha: 0.22 });
+              mazeGraphics.rect(x + w * 0.82, y, Math.max(2, w * 0.18), h).fill({ color: 0x463423, alpha: 0.35 });
             }
           }
         }
@@ -147,7 +164,7 @@ export default function GameView({
         const g = gameRef.current;
         if (!g) return;
         const cellSize = getCellSize();
-        const radius = cellSize * 0.38;
+        const avatarSize = cellSize * 0.72;
         const pos = g.positions || {};
         const roles = g.roles || {};
         const caught = new Set(g.caughtThieves || []);
@@ -164,41 +181,92 @@ export default function GameView({
           let node = characterNodes.get(socketId);
           if (!node) {
             const cont = new PIXI.Container();
-            const circle = new PIXI.Graphics();
+            const shadow = new PIXI.Graphics();
+            const body = new PIXI.Graphics();
+            const labelBg = new PIXI.Graphics();
             const label = new PIXI.Text({
               text: getNickname(socketId),
               style: {
                 fontSize: Math.max(11, cellSize * 0.32),
                 fill: 0xffffff,
                 align: 'center',
+                fontWeight: '700',
               },
             });
-            label.anchor.set(0.5, 0);
-            label.y = radius + 2;
-            cont.addChild(circle);
+            const roleMark = new PIXI.Text({
+              text: '?',
+              style: {
+                fontSize: Math.max(10, cellSize * 0.28),
+                fill: 0xffffff,
+                fontWeight: '800',
+              },
+            });
+            roleMark.anchor.set(0.5);
+            label.anchor.set(0.5, 0.5);
+            cont.addChild(shadow);
+            cont.addChild(body);
+            cont.addChild(roleMark);
+            cont.addChild(labelBg);
             cont.addChild(label);
             charactersContainer.addChild(cont);
-            node = { container: cont, circle, label };
+            node = { container: cont, shadow, body, labelBg, label, roleMark };
             characterNodes.set(socketId, node);
           }
 
           node.label.text = getNickname(socketId);
+          node.label.style.fontSize = Math.max(11, cellSize * 0.24);
 
-          node.circle.clear();
+          node.shadow.clear();
+          node.shadow.ellipse(0, avatarSize * 0.42, avatarSize * 0.32, avatarSize * 0.13).fill({ color: 0x000000, alpha: 0.18 });
+
+          node.body.clear();
+          node.labelBg.clear();
           if (isCaught) {
-            node.circle.circle(0, 0, radius).fill({ color: 0x666666 });
-            node.label.style.fill = 0x999999;
+            node.body.rect(-avatarSize * 0.24, -avatarSize * 0.18, avatarSize * 0.48, avatarSize * 0.32).fill({ color: 0x666666 });
+            node.body.rect(-avatarSize * 0.18, -avatarSize * 0.46, avatarSize * 0.36, avatarSize * 0.28).fill({ color: 0x9b8a78 });
+            node.body.rect(-avatarSize * 0.18, avatarSize * 0.14, avatarSize * 0.12, avatarSize * 0.26).fill({ color: 0x555555 });
+            node.body.rect(avatarSize * 0.06, avatarSize * 0.14, avatarSize * 0.12, avatarSize * 0.26).fill({ color: 0x555555 });
+            node.label.style.fill = 0xc8c8c8;
+            node.roleMark.text = 'X';
+            node.roleMark.style.fill = 0xd6d6d6;
           } else {
             if (role === 'police') {
-              node.circle.circle(0, 0, radius).fill({ color: 0x5b7cff });
+              node.body.rect(-avatarSize * 0.3, -avatarSize * 0.16, avatarSize * 0.6, avatarSize * 0.34).fill({ color: 0x375cbe });
+              node.body.rect(-avatarSize * 0.18, -avatarSize * 0.46, avatarSize * 0.36, avatarSize * 0.28).fill({ color: 0xf0c9a4 });
+              node.body.rect(-avatarSize * 0.22, -avatarSize * 0.56, avatarSize * 0.44, avatarSize * 0.1).fill({ color: 0x1e326b });
+              node.body.rect(-avatarSize * 0.28, -avatarSize * 0.5, avatarSize * 0.56, avatarSize * 0.08).fill({ color: 0x29438c });
+              node.body.rect(-avatarSize * 0.08, -avatarSize * 0.06, avatarSize * 0.16, avatarSize * 0.12).fill({ color: 0xf1c84b });
+              node.body.rect(-avatarSize * 0.18, avatarSize * 0.18, avatarSize * 0.12, avatarSize * 0.24).fill({ color: 0x1d2e63 });
+              node.body.rect(avatarSize * 0.06, avatarSize * 0.18, avatarSize * 0.12, avatarSize * 0.24).fill({ color: 0x1d2e63 });
+              node.roleMark.text = 'P';
+              node.roleMark.style.fill = 0xffffff;
             } else if (role === 'thief') {
-              node.circle.circle(0, 0, radius).fill({ color: 0xff9f43 });
+              node.body.rect(-avatarSize * 0.3, -avatarSize * 0.16, avatarSize * 0.6, avatarSize * 0.34).fill({ color: 0x2f3136 });
+              node.body.rect(-avatarSize * 0.3, -avatarSize * 0.05, avatarSize * 0.6, avatarSize * 0.07).fill({ color: 0xd48a34 });
+              node.body.rect(-avatarSize * 0.3, avatarSize * 0.06, avatarSize * 0.6, avatarSize * 0.07).fill({ color: 0xd48a34 });
+              node.body.rect(-avatarSize * 0.18, -avatarSize * 0.46, avatarSize * 0.36, avatarSize * 0.28).fill({ color: 0xe8c09d });
+              node.body.rect(-avatarSize * 0.2, -avatarSize * 0.38, avatarSize * 0.4, avatarSize * 0.08).fill({ color: 0x111111 });
+              node.body.rect(-avatarSize * 0.18, avatarSize * 0.18, avatarSize * 0.12, avatarSize * 0.24).fill({ color: 0x151515 });
+              node.body.rect(avatarSize * 0.06, avatarSize * 0.18, avatarSize * 0.12, avatarSize * 0.24).fill({ color: 0x151515 });
+              node.roleMark.text = 'T';
+              node.roleMark.style.fill = 0xffd38b;
             } else {
-              node.circle.circle(0, 0, radius).fill({ color: 0x888888 });
+              node.body.rect(-avatarSize * 0.3, -avatarSize * 0.16, avatarSize * 0.6, avatarSize * 0.34).fill({ color: 0x7d8794 });
+              node.body.rect(-avatarSize * 0.18, -avatarSize * 0.46, avatarSize * 0.36, avatarSize * 0.28).fill({ color: 0xe8c09d });
+              node.body.rect(-avatarSize * 0.18, avatarSize * 0.18, avatarSize * 0.12, avatarSize * 0.24).fill({ color: 0x5d6672 });
+              node.body.rect(avatarSize * 0.06, avatarSize * 0.18, avatarSize * 0.12, avatarSize * 0.24).fill({ color: 0x5d6672 });
+              node.roleMark.text = '?';
+              node.roleMark.style.fill = 0xffffff;
             }
-            node.circle.stroke({ width: 2, color: 0xffffff });
             node.label.style.fill = 0xffffff;
           }
+
+          node.roleMark.position.set(0, -avatarSize * 0.02);
+          node.labelBg.roundRect(-avatarSize * 0.5, avatarSize * 0.48, avatarSize, avatarSize * 0.26, avatarSize * 0.08).fill({
+            color: 0x18202c,
+            alpha: 0.88,
+          });
+          node.label.position.set(0, avatarSize * 0.61);
 
           const cur = displayPos.get(socketId)!;
           node.container.position.set(cur.x, cur.y);

@@ -11,14 +11,13 @@ export default function VirtualJoystick({
   onMove,
   disabled,
 }: {
-  onMove: (angle: number, moving: boolean) => void;
+  onMove: (x: number, y: number) => void;
   disabled?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
   const [active, setActive] = useState(false);
-  const lastAngleRef = useRef<number | null>(null);
-  const lastMovingRef = useRef(false);
+  const lastMoveRef = useRef<{ x: number; y: number } | null>(null);
 
   const getCenter = useCallback(() => {
     const el = containerRef.current;
@@ -45,13 +44,19 @@ export default function VirtualJoystick({
       const clamped = clampKnob(dx, dy);
       setKnobPos(clamped);
       const dist = Math.hypot(clamped.x, clamped.y);
-      const magnitude = dist / (RADIUS - KNOB_RADIUS);
-      const moving = magnitude > DEADZONE;
-      const angle = Math.atan2(clamped.y, clamped.x);
-      if (moving !== lastMovingRef.current || (moving && lastAngleRef.current !== angle)) {
-        lastAngleRef.current = angle;
-        lastMovingRef.current = moving;
-        onMove(angle, moving);
+      const maxDistance = RADIUS - KNOB_RADIUS;
+      const rawMagnitude = dist / maxDistance;
+      const activeMagnitude = rawMagnitude <= DEADZONE ? 0 : (rawMagnitude - DEADZONE) / (1 - DEADZONE);
+      const normalized = dist > 0
+        ? {
+            x: (clamped.x / dist) * activeMagnitude,
+            y: (clamped.y / dist) * activeMagnitude,
+          }
+        : { x: 0, y: 0 };
+      const lastMove = lastMoveRef.current;
+      if (!lastMove || Math.abs(lastMove.x - normalized.x) > 0.02 || Math.abs(lastMove.y - normalized.y) > 0.02) {
+        lastMoveRef.current = normalized;
+        onMove(normalized.x, normalized.y);
       }
     },
     [getCenter, onMove]
@@ -73,9 +78,8 @@ export default function VirtualJoystick({
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
     setActive(false);
     setKnobPos({ x: 0, y: 0 });
-    lastAngleRef.current = null;
-    lastMovingRef.current = false;
-    onMove(0, false);
+    lastMoveRef.current = { x: 0, y: 0 };
+    onMove(0, 0);
   };
 
   return (

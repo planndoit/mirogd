@@ -10,6 +10,9 @@ const PREP_SECONDS = 10;
 const CATCH_RADIUS = 0.5; // 거리 이내면 잡힘 (연속 좌표)
 const MOVE_SPEED = 3; // 셀/초
 const MOVE_TICK_MS = 50;
+const DISCONNECT_GRACE_MS = 90 * 1000;
+const PATH = 0;
+const PLAYER_RADIUS = 0.24;
 
 const generateRoomId = () => {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -20,21 +23,121 @@ const generateRoomId = () => {
   return rooms.has(id) ? generateRoomId() : id;
 };
 
-/**
- * @typedef {'waiting'|'preparing'|'playing'|'ended'} RoomStatus
- * @typedef {'player'|'spectator'} ParticipantType
- * @typedef {'police'|'thief'|null} Role
- */
+function getAllParticipants(room) {
+  return [...room.players, ...room.spectators];
+}
 
-/**
- * @param {Object} options
- * @param {string} options.roomName
- * @param {string} options.hostNickname
- * @param {string} options.hostSocketId
- * @param {number} [options.maxPlayers=6]
- * @param {number} [options.gameTimeSeconds=180]
- */
-export function createRoom({ roomName, hostNickname, hostSocketId, maxPlayers = 6, gameTimeSeconds = 180 }) {
+function findParticipantBySession(room, sessionId) {
+  if (!sessionId) return null;
+  return getAllParticipants(room).find((participant) => participant.sessionId === sessionId) ?? null;
+}
+
+function findParticipantBySocket(room, socketId) {
+  if (!socketId) return null;
+  return getAllParticipants(room).find((participant) => participant.socketId === socketId) ?? null;
+}
+
+function clearDisconnectTimer(participant) {
+  if (participant?.disconnectTimerId) {
+    clearTimeout(participant.disconnectTimerId);
+    participant.disconnectTimerId = null;
+  }
+}
+
+function syncHost(room) {
+  if (!room.players.length) return;
+  const host = room.players.find((player) => player.sessionId === room.hostSessionId) ?? room.players[0];
+  room.hostSessionId = host.sessionId;
+  room.hostSocketId = host.socketId;
+  room.players.forEach((player) => {
+    player.isHost = player.sessionId === room.hostSessionId;
+  });
+}
+
+function cleanupGameParticipant(room, socketId) {
+  if (!room?.game || !socketId) return;
+  delete room.game.positions[socketId];
+  delete room.game.directions[socketId];
+  delete room.game.roles[socketId];
+  room.game.caughtThieves = room.game.caughtThieves.filter((id) => id !== socketId);
+}
+
+function remapGameParticipant(room, previousSocketId, nextSocketId) {
+  if (!room?.game || !previousSocketId || previousSocketId === nextSocketId) return;
+
+  if (room.game.positions[previousSocketId]) {
+    room.game.positions[nextSocketId] = room.game.positions[previousSocketId];
+    delete room.game.positions[previousSocketId];
+  }
+  if (room.game.directions[previousSocketId]) {
+    room.game.directions[nextSocketId] = room.game.directions[previousSocketId];
+    delete room.game.directions[previousSocketId];
+  }
+  if (room.game.roles[previousSocketId]) {
+    room.game.roles[nextSocketId] = room.game.roles[previousSocketId];
+    delete room.game.roles[previousSocketId];
+  }
+  room.game.caughtThieves = room.game.caughtThieves.map((id) => (id === previousSocketId ? nextSocketId : id));
+}
+
+function finalizeLeaveBySession(roomId, sessionId) {
+  const room = rooms.get(roomId);
+  if (!room) return null;
+
+  const participant = findParticipantBySession(room, sessionId);
+  if (!participant) return room;
+
+  clearDisconnectTimer(participant);
+  room.players = room.players.filter((player) => player.sessionId !== sessionId);
+  room.spectators = room.spectators.filter((spectator) => spectator.sessionId !== sessionId);
+  cleanupGameParticipant(room, participant.socketId);
+
+  if (room.players.length === 0) {
+    rooms.delete(roomId);
+    return null;
+  }
+
+  syncHost(room);
+  return room;
+}
+
+function makeParticipant({ sessionId, socketId, nickname, type, isHost = false }) {
+  return {
+    sessionId,
+    socketId,
+    nickname,
+    type,
+    role: null,
+    isHost,
+    disconnectedAt: null,
+    disconnectTimerId: null,
+  };
+}
+
+function isWalkable(maze, x, y) {
+  const rows = maze.length;
+  const cols = maze[0].length;
+  const points = [
+    [x - PLAYER_RADIUS, y - PLAYER_RADIUS],
+    [x + PLAYER_RADIUS, y - PLAYER_RADIUS],
+    [x - PLAYER_RADIUS, y + PLAYER_RADIUS],
+    [x + PLAYER_RADIUS, y + PLAYER_RADIUS],
+  ];
+
+  return points.every(([px, py]) => {
+    if (px < 0 || py < 0 || px >= cols || py >= rows) return false;
+    return maze[Math.floor(py)][Math.floor(px)] === PATH;
+  });
+}
+
+export function createRoom({
+  roomName,
+  hostNickname,
+  hostSocketId,
+  hostSessionId,
+  maxPlayers = 6,
+  gameTimeSeconds = 180,
+}) {
   const roomId = generateRoomId();
   const room = {
     id: roomId,
@@ -43,92 +146,91 @@ export function createRoom({ roomName, hostNickname, hostSocketId, maxPlayers = 
     maxPlayers,
     gameTimeSeconds,
     hostSocketId,
+    hostSessionId,
     players: [
-      { socketId: hostSocketId, nickname: hostNickname, type: 'player', role: null, isHost: true },
+      makeParticipant({
+        sessionId: hostSessionId,
+        socketId: hostSocketId,
+        nickname: hostNickname,
+        type: 'player',
+        isHost: true,
+      }),
     ],
     spectators: [],
-    game: null, // preparing/playing 시 { maze, positions, prepEndAt, gameEndAt, caughtThieves }
+    game: null,
     createdAt: Date.now(),
   };
   rooms.set(roomId, room);
   return room;
 }
 
-/**
- * @param {string} roomId
- */
 export function getRoom(roomId) {
   return rooms.get(roomId) ?? null;
 }
 
-/**
- * @param {string} roomId
- * @param {string} socketId
- * @param {string} nickname
- * @param {boolean} forceSpectator - true면 관전자로만 입장
- */
-export function joinRoom(roomId, socketId, nickname, forceSpectator = false) {
+export function joinRoom(roomId, socketId, nickname, forceSpectator = false, sessionId = socketId) {
   const room = rooms.get(roomId);
   if (!room) return { success: false, error: 'room_not_found' };
-  if (room.status !== 'waiting') {
-    return { success: true, room, asSpectator: true };
+
+  const normalizedNickname = nickname.trim();
+  const normalizedSessionId = sessionId || socketId;
+
+  const existing = findParticipantBySession(room, normalizedSessionId);
+  if (existing) {
+    clearDisconnectTimer(existing);
+    remapGameParticipant(room, existing.socketId, socketId);
+    existing.socketId = socketId;
+    existing.disconnectedAt = null;
+    if (existing.type === 'player') syncHost(room);
+    return { success: true, room, asSpectator: existing.type === 'spectator', resumed: true };
   }
 
-  const playerCount = room.players.length;
-  const asSpectator = forceSpectator || playerCount >= room.maxPlayers;
-
-  if (asSpectator) {
-    room.spectators.push({ socketId, nickname });
-    return { success: true, room, asSpectator: true };
-  }
-
-  const alreadyIn = room.players.some((p) => p.socketId === socketId) || room.spectators.some((s) => s.socketId === socketId);
+  const alreadyIn = room.players.some((player) => player.socketId === socketId)
+    || room.spectators.some((spectator) => spectator.socketId === socketId);
   if (alreadyIn) return { success: false, error: 'already_in_room' };
 
   const nicknameTaken = [...room.players, ...room.spectators].some(
-    (p) => p.nickname.toLowerCase() === nickname.trim().toLowerCase()
+    (participant) => participant.nickname.toLowerCase() === normalizedNickname.toLowerCase()
   );
   if (nicknameTaken) return { success: false, error: 'nickname_taken' };
 
-  room.players.push({
+  const playerCount = room.players.length;
+  const asSpectator = room.status !== 'waiting' || forceSpectator || playerCount >= room.maxPlayers;
+  const participant = makeParticipant({
+    sessionId: normalizedSessionId,
     socketId,
-    nickname: nickname.trim(),
-    type: 'player',
-    role: null,
-    isHost: false,
+    nickname: normalizedNickname,
+    type: asSpectator ? 'spectator' : 'player',
   });
+
+  if (asSpectator) {
+    room.spectators.push(participant);
+    return { success: true, room, asSpectator: true };
+  }
+
+  room.players.push(participant);
   return { success: true, room, asSpectator: false };
 }
 
-/**
- * @param {string} roomId
- * @param {string} socketId
- */
-export function leaveRoom(roomId, socketId) {
+export function leaveRoom(roomId, socketId, options = {}) {
   const room = rooms.get(roomId);
   if (!room) return null;
 
-  room.players = room.players.filter((p) => p.socketId !== socketId);
-  room.spectators = room.spectators.filter((s) => s.socketId !== socketId);
+  const participant = findParticipantBySocket(room, socketId);
+  if (!participant) return room;
 
-  if (room.players.length === 0) {
-    rooms.delete(roomId);
-    return null;
+  if (options.gracefulDisconnect) {
+    clearDisconnectTimer(participant);
+    participant.disconnectedAt = Date.now();
+    participant.disconnectTimerId = setTimeout(() => {
+      finalizeLeaveBySession(roomId, participant.sessionId);
+    }, DISCONNECT_GRACE_MS);
+    return room;
   }
 
-  if (room.hostSocketId === socketId) {
-    room.hostSocketId = room.players[0].socketId;
-    room.players[0].isHost = true;
-  }
-  return room;
+  return finalizeLeaveBySession(roomId, participant.sessionId);
 }
 
-/**
- * @param {string} roomId
- * @param {number} maxPlayers
- * @param {number} gameTimeSeconds
- * @param {string} socketId - 방장만 변경 가능
- */
 export function updateRoomSettings(roomId, { maxPlayers, gameTimeSeconds }, socketId) {
   const room = rooms.get(roomId);
   if (!room || room.hostSocketId !== socketId) return null;
@@ -141,12 +243,6 @@ export function getAllRooms() {
   return Array.from(rooms.values());
 }
 
-/**
- * 게임 시작 (방장만). 미로 생성, 랜덤 스폰, 준비 10초 후 역할 배정.
- * @param {string} roomId
- * @param {string} socketId
- * @returns {{ success: boolean, error?: string, prepEndAt?: number, game?: object }}
- */
 export function startGame(roomId, socketId) {
   const room = rooms.get(roomId);
   if (!room) return { success: false, error: 'room_not_found' };
@@ -158,11 +254,11 @@ export function startGame(roomId, socketId) {
   const maze = generateMaze(rows, cols);
   const pathCells = getRandomPathCells(maze, room.players.length);
   const positions = {};
-  const directions = {}; // { [socketId]: { angle, moving } }
-  room.players.forEach((p, i) => {
-    const rc = pathCells[i];
-    positions[p.socketId] = { x: rc.col + 0.5, y: rc.row + 0.5 };
-    directions[p.socketId] = { angle: 0, moving: false };
+  const directions = {};
+  room.players.forEach((player, index) => {
+    const cell = pathCells[index];
+    positions[player.socketId] = { x: cell.col + 0.5, y: cell.row + 0.5 };
+    directions[player.socketId] = { x: 0, y: 0, moving: false };
   });
 
   const prepEndAt = Date.now() + PREP_SECONDS * 1000;
@@ -185,20 +281,17 @@ export function startGame(roomId, socketId) {
   };
 }
 
-/**
- * 준비 시간 종료 시 호출: 역할 배정, 게임 시작
- */
 export function finishPrepAndStartGame(roomId) {
   const room = rooms.get(roomId);
   if (!room || room.status !== 'preparing' || !room.game) return room;
 
-  const playerIds = room.players.map((p) => p.socketId);
+  const playerIds = room.players.map((player) => player.socketId);
   const thiefCount = Math.max(1, Math.floor(playerIds.length / 2));
   shuffleArray(playerIds);
   const thieves = new Set(playerIds.slice(0, thiefCount));
   const roles = {};
-  room.players.forEach((p) => {
-    roles[p.socketId] = thieves.has(p.socketId) ? 'thief' : 'police';
+  room.players.forEach((player) => {
+    roles[player.socketId] = thieves.has(player.socketId) ? 'thief' : 'police';
   });
 
   room.status = 'playing';
@@ -215,22 +308,24 @@ export function updatePositions(roomId) {
   const rows = maze.length;
   const cols = maze[0].length;
   const dt = MOVE_TICK_MS / 1000;
-  const step = MOVE_SPEED * dt;
+  const clamp = (value, max) => Math.max(PLAYER_RADIUS, Math.min(max - PLAYER_RADIUS, value));
 
   for (const socketId of Object.keys(positions)) {
     const pos = positions[socketId];
     const dir = directions[socketId];
     if (!dir?.moving) continue;
-    const angle = dir.angle;
-    let nx = pos.x + Math.cos(angle) * step;
-    let ny = pos.y + Math.sin(angle) * step;
-    nx = Math.max(0.3, Math.min(cols - 0.7, nx));
-    ny = Math.max(0.3, Math.min(rows - 0.7, ny));
-    const cellR = Math.floor(ny);
-    const cellC = Math.floor(nx);
-    if (cellR >= 0 && cellR < rows && cellC >= 0 && cellC < cols && maze[cellR][cellC] === 0) {
-      pos.x = nx;
-      pos.y = ny;
+
+    const dx = dir.x * MOVE_SPEED * dt;
+    const dy = dir.y * MOVE_SPEED * dt;
+
+    const nextX = clamp(pos.x + dx, cols);
+    if (isWalkable(maze, nextX, pos.y)) {
+      pos.x = nextX;
+    }
+
+    const nextY = clamp(pos.y + dy, rows);
+    if (isWalkable(maze, pos.x, nextY)) {
+      pos.y = nextY;
     }
   }
 
@@ -247,24 +342,27 @@ function shuffleArray(arr) {
   }
 }
 
-/**
- * 이동 방향 설정 (360° 연속 이동). angle(rad), moving(boolean)
- */
-export function setMoveDirection(roomId, socketId, angle, moving) {
+export function setMoveDirection(roomId, socketId, x, y) {
   const room = rooms.get(roomId);
   if (!room?.game?.directions || !room.game.positions[socketId]) return room;
   const dir = room.game.directions[socketId];
   if (dir) {
-    dir.angle = angle;
-    dir.moving = moving;
+    const magnitude = Math.min(1, Math.hypot(x, y));
+    dir.x = magnitude > 0 ? x : 0;
+    dir.y = magnitude > 0 ? y : 0;
+    dir.moving = magnitude > 0;
   }
   return room;
 }
 
 function checkCatches(room) {
   const { positions, roles, caughtThieves } = room.game;
-  const policeIds = room.players.filter((p) => roles[p.socketId] === 'police').map((p) => p.socketId);
-  const thiefIds = room.players.filter((p) => roles[p.socketId] === 'thief' && !caughtThieves.includes(p.socketId)).map((p) => p.socketId);
+  const policeIds = room.players
+    .filter((player) => roles[player.socketId] === 'police')
+    .map((player) => player.socketId);
+  const thiefIds = room.players
+    .filter((player) => roles[player.socketId] === 'thief' && !caughtThieves.includes(player.socketId))
+    .map((player) => player.socketId);
 
   for (const pid of policeIds) {
     const pPos = positions[pid];
@@ -288,7 +386,7 @@ function checkCatches(room) {
 function checkGameEnd(room) {
   if (room.status !== 'playing' || room.game.winner) return;
   const { roles, caughtThieves, gameEndAt } = room.game;
-  const thiefCount = room.players.filter((p) => roles[p.socketId] === 'thief').length;
+  const thiefCount = room.players.filter((player) => roles[player.socketId] === 'thief').length;
   const caughtCount = caughtThieves.length;
   if (caughtCount >= thiefCount) {
     room.game.winner = 'police';
@@ -304,8 +402,8 @@ function checkGameEnd(room) {
 function serializeGame(game) {
   if (!game) return null;
   const pos = {};
-  for (const [id, p] of Object.entries(game.positions || {})) {
-    pos[id] = 'x' in p ? { x: p.x, y: p.y } : { x: p.col + 0.5, y: p.row + 0.5 };
+  for (const [id, point] of Object.entries(game.positions || {})) {
+    pos[id] = 'x' in point ? { x: point.x, y: point.y } : { x: point.col + 0.5, y: point.row + 0.5 };
   }
   return {
     maze: game.maze,
@@ -318,26 +416,20 @@ function serializeGame(game) {
   };
 }
 
-/**
- * 게임 종료 후 대기실로 (방장만). status=waiting, game=null
- */
 export function backToLobby(roomId, socketId) {
   const room = rooms.get(roomId);
   if (!room || room.hostSocketId !== socketId) return null;
   return resetRoomToLobby(roomId);
 }
 
-/**
- * 게임 종료 후 자동 대기실 복귀 (서버에서 호출, 방장 불필요)
- */
 export function resetRoomToLobby(roomId) {
   const room = rooms.get(roomId);
   if (!room) return null;
   if (room.game?.moveIntervalId) clearInterval(room.game.moveIntervalId);
   room.status = 'waiting';
   room.game = null;
-  room.players.forEach((p) => {
-    p.role = null;
+  room.players.forEach((player) => {
+    player.role = null;
   });
   return room;
 }

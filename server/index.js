@@ -103,7 +103,7 @@ app.get('/api/room/:roomId', (req, res) => {
 
 io.on('connection', (socket) => {
   socket.on('room:create', (payload, ack) => {
-    const { roomName, nickname, maxPlayers = 6, gameTimeSeconds = 180 } = payload || {};
+    const { roomName, nickname, sessionId, maxPlayers = 6, gameTimeSeconds = 180 } = payload || {};
     if (!nickname?.trim()) {
       ack?.({ success: false, error: 'nickname_required' });
       return;
@@ -112,11 +112,13 @@ io.on('connection', (socket) => {
       roomName: roomName?.trim(),
       hostNickname: nickname.trim(),
       hostSocketId: socket.id,
+      hostSessionId: sessionId || socket.id,
       maxPlayers: Number(maxPlayers) || 6,
       gameTimeSeconds: Number(gameTimeSeconds) || 180,
     });
     socket.join(room.id);
     socket.data.roomId = room.id;
+    socket.data.sessionId = sessionId || socket.id;
     socket.data.nickname = nickname.trim();
     socket.data.isHost = true;
     socket.data.asSpectator = false;
@@ -125,20 +127,21 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:join', (payload, ack) => {
-    const { roomId, nickname } = payload || {};
+    const { roomId, nickname, sessionId } = payload || {};
     if (!roomId || !nickname?.trim()) {
       ack?.({ success: false, error: 'room_id_and_nickname_required' });
       return;
     }
-    const result = joinRoom(roomId, socket.id, nickname.trim());
+    const result = joinRoom(roomId, socket.id, nickname.trim(), false, sessionId || socket.id);
     if (!result.success) {
       ack?.({ success: false, error: result.error });
       return;
     }
     socket.join(roomId);
     socket.data.roomId = roomId;
+    socket.data.sessionId = sessionId || socket.id;
     socket.data.nickname = nickname.trim();
-    socket.data.isHost = false;
+    socket.data.isHost = result.room.players.some((p) => p.socketId === socket.id && p.isHost);
     socket.data.asSpectator = result.asSpectator;
     ack?.({
       success: true,
@@ -154,6 +157,7 @@ io.on('connection', (socket) => {
     const room = leaveRoom(roomId, socket.id);
     socket.leave(roomId);
     socket.data.roomId = null;
+    socket.data.sessionId = null;
     socket.data.nickname = null;
     socket.data.isHost = false;
     socket.data.asSpectator = false;
@@ -206,10 +210,10 @@ io.on('connection', (socket) => {
   socket.on('game:moveDirection', (payload) => {
     const roomId = socket.data.roomId;
     if (!roomId) return;
-    const angle = Number(payload?.angle);
-    const moving = Boolean(payload?.moving);
-    if (Number.isNaN(angle)) return;
-    const room = setMoveDirection(roomId, socket.id, angle, moving);
+    const x = Number(payload?.x);
+    const y = Number(payload?.y);
+    if (Number.isNaN(x) || Number.isNaN(y)) return;
+    const room = setMoveDirection(roomId, socket.id, x, y);
     if (!room?.game) return;
     io.to(roomId).emit('game:positions', serializeGame(room.game).positions);
   });
@@ -226,7 +230,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     const roomId = socket.data.roomId;
     if (!roomId) return;
-    const room = leaveRoom(roomId, socket.id);
+    const room = leaveRoom(roomId, socket.id, { gracefulDisconnect: true });
     if (room) io.to(roomId).emit('room:updated', serializeRoom(room));
   });
 });

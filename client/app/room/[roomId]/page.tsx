@@ -1,9 +1,10 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { getSocket } from '@/lib/socket';
+import { clearRoomSession, getClientSessionId, getRoomSession, saveRoomSession } from '@/lib/session';
 import GameView from '@/components/GameView';
 import styles from './page.module.css';
 
@@ -39,17 +40,78 @@ export default function RoomPage() {
   const [joinError, setJoinError] = useState('');
   const [joinLoading, setJoinLoading] = useState(false);
   const [needsJoin, setNeedsJoin] = useState(true);
-  const [checkedCreated, setCheckedCreated] = useState(false);
+  const [restoreChecked, setRestoreChecked] = useState(false);
   const [myNickname, setMyNickname] = useState('');
   const [mySocketId, setMySocketId] = useState<string>('');
   const [isHost, setIsHost] = useState(false);
   const [asSpectator, setAsSpectator] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
 
-  // 방 만들기 직후 이동한 경우: 입장 폼 건너뛰고 대기실로
+  const applyJoinSuccess = useCallback(
+    (nickname: string, joinedRoom: Room, spectator: boolean) => {
+      const socket = getSocket();
+      setRoom(joinedRoom);
+      setNeedsJoin(false);
+      setJoinError('');
+      setMyNickname(nickname);
+      setMySocketId(socket.id ?? '');
+      setIsHost(joinedRoom.players.some((p) => p.nickname === nickname && p.isHost));
+      setAsSpectator(spectator);
+      setGameState(joinedRoom.game ?? null);
+      saveRoomSession({ roomId, nickname });
+    },
+    [roomId]
+  );
+
+  const joinCurrentRoom = useCallback(
+    (nickname: string, options?: { silent?: boolean }) => {
+      const nick = nickname.trim();
+      if (!nick) {
+        if (!options?.silent) setJoinError('닉네임을 입력해 주세요.');
+        return;
+      }
+
+      setJoinError('');
+      setJoinLoading(true);
+
+      const socket = getSocket();
+      socket.emit(
+        'room:join',
+        { roomId, nickname: nick, sessionId: getClientSessionId() },
+        (res: { success?: boolean; error?: string; room?: Room; asSpectator?: boolean }) => {
+          setJoinLoading(false);
+          if (res?.success && res.room) {
+            applyJoinSuccess(nick, res.room, res.asSpectator ?? false);
+            return;
+          }
+
+          if (res?.error === 'room_not_found') {
+            clearRoomSession(roomId);
+            setRoom(null);
+            setGameState(null);
+          }
+
+          setNeedsJoin(true);
+          setAsSpectator(false);
+          if (options?.silent) return;
+
+          if (res?.error === 'room_not_found') setJoinError('방을 찾을 수 없습니다.');
+          else if (res?.error === 'nickname_taken') setJoinError('이미 사용 중인 닉네임입니다.');
+          else setJoinError('입장에 실패했습니다.');
+        }
+      );
+    },
+    [applyJoinSuccess, roomId]
+  );
+
   useEffect(() => {
     if (!roomId) return;
     try {
+      const saved = getRoomSession(roomId);
+      if (saved?.nickname) {
+        setJoinNickname(saved.nickname);
+        setMyNickname(saved.nickname);
+      }
       const raw = sessionStorage.getItem('mirogd_created_room');
       const data = raw ? JSON.parse(raw) : null;
       if (data?.roomId === roomId) {
@@ -66,7 +128,7 @@ export default function RoomPage() {
     } catch (_) {
       // ignore
     }
-    setCheckedCreated(true);
+    setRestoreChecked(true);
   }, [roomId]);
 
   useEffect(() => {
@@ -83,55 +145,39 @@ export default function RoomPage() {
       setGameState(game);
     };
 
-    const onGamePositions = (positions: Record<string, { row: number; col: number }>) => {
+    const onGamePositions = (positions: Record<string, { x: number; y: number }>) => {
       setGameState((prev) => (prev ? { ...prev, positions } : null));
+    };
+
+    const onConnect = () => {
+      setMySocketId(socket.id ?? '');
+      const saved = getRoomSession(roomId);
+      if (saved?.nickname) {
+        joinCurrentRoom(saved.nickname, { silent: true });
+      }
     };
 
     socket.on('room:updated', onUpdated);
     socket.on('game:state', onGameState);
     socket.on('game:positions', onGamePositions);
+    socket.on('connect', onConnect);
+    if (socket.connected) onConnect();
     return () => {
       socket.off('room:updated', onUpdated);
       socket.off('game:state', onGameState);
       socket.off('game:positions', onGamePositions);
+      socket.off('connect', onConnect);
     };
-  }, [roomId]);
+  }, [joinCurrentRoom, roomId]);
 
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
-    const nick = joinNickname.trim();
-    if (!nick) {
-      setJoinError('닉네임을 입력해 주세요.');
-      return;
-    }
-    setJoinError('');
-    setJoinLoading(true);
-
-    const socket = getSocket();
-    socket.emit(
-      'room:join',
-      { roomId, nickname: nick },
-      (res: { success?: boolean; error?: string; room?: Room; asSpectator?: boolean }) => {
-        setJoinLoading(false);
-        if (res?.success && res.room) {
-          setRoom(res.room);
-          setNeedsJoin(false);
-          setMyNickname(nick);
-          setMySocketId(socket.id ?? '');
-          setIsHost(res.room.players.some((p) => p.nickname === nick && p.isHost));
-          setAsSpectator(res.asSpectator ?? false);
-          if (res.room.game) setGameState(res.room.game);
-          return;
-        }
-        if (res?.error === 'room_not_found') setJoinError('방을 찾을 수 없습니다.');
-        else if (res?.error === 'nickname_taken') setJoinError('이미 사용 중인 닉네임입니다.');
-        else setJoinError('입장에 실패했습니다.');
-      }
-    );
+    joinCurrentRoom(joinNickname);
   };
 
   const handleLeave = () => {
     const socket = getSocket();
+    clearRoomSession(roomId);
     socket.emit('room:leave');
     setRoom(null);
     setNeedsJoin(true);
@@ -150,13 +196,13 @@ export default function RoomPage() {
     });
   };
 
-  const moveThrottleRef = useRef<{ angle: number; moving: boolean; t: number } | null>(null);
-  const handleGameMove = (angle: number, moving: boolean) => {
+  const moveThrottleRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const handleGameMove = (x: number, y: number) => {
     const now = Date.now();
     const last = moveThrottleRef.current;
-    if (last && now - last.t < 50 && last.moving === moving && Math.abs(last.angle - angle) < 0.05) return;
-    moveThrottleRef.current = { angle, moving, t: now };
-    getSocket().emit('game:moveDirection', { angle, moving });
+    if (last && now - last.t < 50 && Math.abs(last.x - x) < 0.03 && Math.abs(last.y - y) < 0.03) return;
+    moveThrottleRef.current = { x, y, t: now };
+    getSocket().emit('game:moveDirection', { x, y });
   };
 
   const handleBackToLobby = () => {
@@ -200,7 +246,7 @@ export default function RoomPage() {
     );
   }
 
-  if (!checkedCreated) {
+  if (!restoreChecked) {
     return (
       <main className={styles.main}>
         <div className={styles.card}>

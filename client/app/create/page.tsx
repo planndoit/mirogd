@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getSocket } from '@/lib/socket';
+import { getClientSessionId, saveRoomSession } from '@/lib/session';
 import styles from './page.module.css';
 
 export default function CreateRoomPage() {
@@ -33,10 +34,12 @@ export default function CreateRoomPage() {
         maxPlayers: Math.max(2, Math.min(12, maxPlayers)),
         gameTimeSeconds: Math.max(60, Math.min(600, gameTimeSeconds)),
         nickname: nick,
+        sessionId: getClientSessionId(),
       },
       (res: { success?: boolean; error?: string; roomId?: string; room?: unknown }) => {
         setLoading(false);
         if (res?.success && res.roomId && res.room) {
+          saveRoomSession({ roomId: res.roomId, nickname: nick });
           try {
             sessionStorage.setItem(
               'mirogd_created_room',
