@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useCallback } from 'react';
+import { useMemo, useRef, useState, useCallback } from 'react';
 import styles from './VirtualJoystick.module.css';
 
 const RADIUS = 70;
@@ -19,6 +19,11 @@ export default function VirtualJoystick({
   const [active, setActive] = useState(false);
   const lastMoveRef = useRef<{ x: number; y: number } | null>(null);
   const activePointerIdRef = useRef<number | null>(null);
+  const activeTouchIdRef = useRef<number | null>(null);
+  const useTouchEvents = useMemo(
+    () => typeof window !== 'undefined' && navigator.maxTouchPoints > 0,
+    []
+  );
 
   const getCenter = useCallback(() => {
     const el = containerRef.current;
@@ -64,6 +69,7 @@ export default function VirtualJoystick({
   );
 
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (useTouchEvents) return;
     if (disabled) return;
     containerRef.current?.setPointerCapture(e.pointerId);
     activePointerIdRef.current = e.pointerId;
@@ -72,14 +78,44 @@ export default function VirtualJoystick({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
+    if (useTouchEvents) return;
     if (!active || disabled || activePointerIdRef.current !== e.pointerId) return;
     updateFromClient(e.clientX, e.clientY);
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
+    if (useTouchEvents) return;
     if (activePointerIdRef.current !== e.pointerId) return;
     containerRef.current?.releasePointerCapture(e.pointerId);
     activePointerIdRef.current = null;
+    setActive(false);
+    setKnobPos({ x: 0, y: 0 });
+    lastMoveRef.current = { x: 0, y: 0 };
+    onMove(0, 0);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!useTouchEvents || disabled) return;
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+    activeTouchIdRef.current = touch.identifier;
+    setActive(true);
+    updateFromClient(touch.clientX, touch.clientY);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!useTouchEvents || disabled || activeTouchIdRef.current === null) return;
+    const touch = Array.from(e.changedTouches).find((item) => item.identifier === activeTouchIdRef.current);
+    if (!touch) return;
+    e.preventDefault();
+    updateFromClient(touch.clientX, touch.clientY);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!useTouchEvents || activeTouchIdRef.current === null) return;
+    const touch = Array.from(e.changedTouches).find((item) => item.identifier === activeTouchIdRef.current);
+    if (!touch) return;
+    activeTouchIdRef.current = null;
     setActive(false);
     setKnobPos({ x: 0, y: 0 });
     lastMoveRef.current = { x: 0, y: 0 };
@@ -95,6 +131,10 @@ export default function VirtualJoystick({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
     >
       <div className={styles.outer} />
       <div
