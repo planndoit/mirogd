@@ -41,15 +41,21 @@ export default function RoomPage() {
   const [joinLoading, setJoinLoading] = useState(false);
   const [needsJoin, setNeedsJoin] = useState(true);
   const [restoreChecked, setRestoreChecked] = useState(false);
+  const [restoringSession, setRestoringSession] = useState(false);
   const [myNickname, setMyNickname] = useState('');
   const [mySocketId, setMySocketId] = useState<string>('');
   const [isHost, setIsHost] = useState(false);
   const [asSpectator, setAsSpectator] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const joinedRef = useRef(false);
+  const lastSocketIdRef = useRef('');
+  const skipNextConnectJoinRef = useRef(false);
 
   const applyJoinSuccess = useCallback(
     (nickname: string, joinedRoom: Room, spectator: boolean) => {
       const socket = getSocket();
+      joinedRef.current = true;
+      lastSocketIdRef.current = socket.id ?? '';
       setRoom(joinedRoom);
       setNeedsJoin(false);
       setJoinError('');
@@ -73,6 +79,7 @@ export default function RoomPage() {
 
       setJoinError('');
       setJoinLoading(true);
+      if (options?.silent) setRestoringSession(true);
 
       const socket = getSocket();
       socket.emit(
@@ -80,6 +87,7 @@ export default function RoomPage() {
         { roomId, nickname: nick, sessionId: getClientSessionId() },
         (res: { success?: boolean; error?: string; room?: Room; asSpectator?: boolean }) => {
           setJoinLoading(false);
+          if (options?.silent) setRestoringSession(false);
           if (res?.success && res.room) {
             applyJoinSuccess(nick, res.room, res.asSpectator ?? false);
             return;
@@ -91,6 +99,7 @@ export default function RoomPage() {
             setGameState(null);
           }
 
+          joinedRef.current = false;
           setNeedsJoin(true);
           setAsSpectator(false);
           if (options?.silent) return;
@@ -111,12 +120,16 @@ export default function RoomPage() {
       if (saved?.nickname) {
         setJoinNickname(saved.nickname);
         setMyNickname(saved.nickname);
+        setRestoringSession(true);
       }
       const raw = sessionStorage.getItem('mirogd_created_room');
       const data = raw ? JSON.parse(raw) : null;
       if (data?.roomId === roomId) {
         sessionStorage.removeItem('mirogd_created_room');
         const socket = getSocket();
+        joinedRef.current = true;
+        skipNextConnectJoinRef.current = true;
+        lastSocketIdRef.current = socket.id ?? '';
         setRoom(data.room as Room);
         if ((data.room as Room).game) setGameState((data.room as Room).game ?? null);
         setNeedsJoin(false);
@@ -124,9 +137,13 @@ export default function RoomPage() {
         setMySocketId(socket.id ?? '');
         setIsHost(Boolean(data.isHost));
         setAsSpectator(false);
+        setRestoringSession(false);
+      } else if (!saved?.nickname) {
+        setRestoringSession(false);
       }
     } catch (_) {
       // ignore
+      setRestoringSession(false);
     }
     setRestoreChecked(true);
   }, [roomId]);
@@ -150,11 +167,23 @@ export default function RoomPage() {
     };
 
     const onConnect = () => {
-      setMySocketId(socket.id ?? '');
-      const saved = getRoomSession(roomId);
-      if (saved?.nickname) {
-        joinCurrentRoom(saved.nickname, { silent: true });
+      const nextSocketId = socket.id ?? '';
+      const previousSocketId = lastSocketIdRef.current;
+      setMySocketId(nextSocketId);
+
+      if (skipNextConnectJoinRef.current && (!previousSocketId || previousSocketId === nextSocketId)) {
+        skipNextConnectJoinRef.current = false;
+        lastSocketIdRef.current = nextSocketId;
+        return;
       }
+
+      const saved = getRoomSession(roomId);
+      const sameSocket = previousSocketId !== '' && previousSocketId === nextSocketId;
+      if (saved?.nickname && (!joinedRef.current || !sameSocket)) {
+        joinCurrentRoom(saved.nickname, { silent: true });
+        return;
+      }
+      lastSocketIdRef.current = nextSocketId;
     };
 
     socket.on('room:updated', onUpdated);
@@ -177,6 +206,8 @@ export default function RoomPage() {
 
   const handleLeave = () => {
     const socket = getSocket();
+    joinedRef.current = false;
+    lastSocketIdRef.current = '';
     clearRoomSession(roomId);
     socket.emit('room:leave');
     setRoom(null);
@@ -246,7 +277,7 @@ export default function RoomPage() {
     );
   }
 
-  if (!restoreChecked) {
+  if (!restoreChecked || restoringSession) {
     return (
       <main className={styles.main}>
         <div className={styles.card}>
