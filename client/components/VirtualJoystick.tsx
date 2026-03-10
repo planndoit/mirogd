@@ -62,17 +62,15 @@ export default function VirtualJoystick({
       const maxDistance = RADIUS - KNOB_RADIUS;
       const rawMagnitude = dist / maxDistance;
       const activeMagnitude = rawMagnitude <= DEADZONE ? 0 : (rawMagnitude - DEADZONE) / (1 - DEADZONE);
-      const normalized = dist > 0
-        ? {
-            x: (clamped.x / dist) * activeMagnitude,
-            y: (clamped.y / dist) * activeMagnitude,
-          }
-        : { x: 0, y: 0 };
-      const lastMove = lastMoveRef.current;
-      if (!lastMove || Math.abs(lastMove.x - normalized.x) > 0.02 || Math.abs(lastMove.y - normalized.y) > 0.02) {
-        lastMoveRef.current = normalized;
-        onMove(normalized.x, normalized.y);
-      }
+      const normalized =
+        dist > 0 && activeMagnitude > 0
+          ? {
+              x: (clamped.x / dist) * activeMagnitude,
+              y: (clamped.y / dist) * activeMagnitude,
+            }
+          : { x: 0, y: 0 };
+      lastMoveRef.current = normalized;
+      onMove(normalized.x, normalized.y);
     },
     [getCenter, onMove]
   );

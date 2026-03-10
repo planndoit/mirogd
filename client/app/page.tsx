@@ -67,7 +67,11 @@ export default function HomePage() {
           {loading && <p className={styles.listHint}>불러오는 중…</p>}
           {error && <p className={styles.error}>{error}</p>}
           {!loading && !error && rooms.length === 0 && (
-            <p className={styles.listHint}>만들어진 방이 없습니다. 방 만들기를 눌러 새 방을 만드세요.</p>
+            <p className={styles.listHint}>
+              만들어진 방이 없습니다.
+              <br />
+              방 만들기를 눌러 새 방을 만드세요.
+            </p>
           )}
           {!loading && rooms.length > 0 && (
             <ul className={styles.roomList}>

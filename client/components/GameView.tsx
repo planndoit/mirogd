@@ -19,7 +19,6 @@ type Player = { socketId: string; nickname: string };
 
 const WALL = 1;
 const PATH = 0;
-const LERP = 1;
 
 export default function GameView({
   game,
@@ -305,13 +304,9 @@ export default function GameView({
         if (!g?.positions) return;
         for (const [socketId, p] of Object.entries(g.positions)) {
           const target = posToPixel(p);
-          const cur = displayPos.get(socketId);
-          if (cur) {
-            cur.x += (target.x - cur.x) * LERP;
-            cur.y += (target.y - cur.y) * LERP;
-            const node = characterNodes.get(socketId);
-            if (node) node.container.position.set(cur.x, cur.y);
-          }
+          displayPos.set(socketId, { x: target.x, y: target.y });
+          const node = characterNodes.get(socketId);
+          if (node) node.container.position.set(target.x, target.y);
         }
       };
       app.ticker.add(tick);

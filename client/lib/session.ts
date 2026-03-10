@@ -11,7 +11,7 @@ type StoredRoomSession = {
 function safeGetStorage() {
   if (typeof window === 'undefined') return null;
   try {
-    return window.localStorage;
+    return window.sessionStorage;
   } catch (_) {
     return null;
   }

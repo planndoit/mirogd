@@ -331,7 +331,16 @@ export function finishPrepAndStartGame(roomId) {
   if (!room || room.status !== 'preparing' || !room.game) return room;
 
   const playerIds = room.players.map((player) => player.socketId);
-  const thiefCount = Math.max(1, Math.floor(playerIds.length / 2));
+  const playerCount = playerIds.length;
+  // 경찰 수: 최대 3명, 최소 1명, 전체 인원의 대략 1/3
+  let policeCount = Math.floor(playerCount / 3);
+  if (policeCount < 1) policeCount = 1;
+  if (policeCount > 3) policeCount = 3;
+  // 최소 1명의 도둑은 보장
+  const maxPolice = Math.max(1, playerCount - 1);
+  if (policeCount > maxPolice) policeCount = maxPolice;
+
+  const thiefCount = playerCount - policeCount;
   shuffleArray(playerIds);
   const thieves = new Set(playerIds.slice(0, thiefCount));
   const roles = {};
