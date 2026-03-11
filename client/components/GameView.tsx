@@ -116,11 +116,8 @@ export default function GameView({
         if (!g?.maze?.length) return;
         mazeGraphics.clear();
         const cellSize = getCellSize();
-        const canvasSize = Math.min(app.renderer.width, app.renderer.height);
-        const mazeWidth = cols * cellSize;
-        const mazeHeight = rows * cellSize;
-        const offsetX = (canvasSize - mazeWidth) / 2;
-        const offsetY = (canvasSize - mazeHeight) / 2;
+        const offsetX = (app.renderer.width - cols * cellSize) / 2;
+        const offsetY = (app.renderer.height - rows * cellSize) / 2;
         const gap = Math.max(1, Math.floor(cellSize * 0.08));
         const inset = gap / 2;
         const PATH_LIGHT = 0x90c267;
