@@ -398,6 +398,48 @@ export default function RoomPage() {
           </button>
         </header>
 
+        <div className={styles.section}>
+          <p className={styles.settingsSummary}>
+            내 상태: {asSpectator ? '관전자' : '플레이어'}
+          </p>
+          {room?.status === 'waiting' && (
+            <div className={styles.settingsControls}>
+              {!asSpectator && (
+                <button
+                  type="button"
+                  className={styles.startButton}
+                  onClick={() => {
+                    const socket = getSocket();
+                    socket.emit('room:switchRole', (res: { success?: boolean; error?: string }) => {
+                      if (!res?.success && res?.error !== 'not_in_room') {
+                        alert('관전 전환에 실패했습니다.');
+                      }
+                    });
+                  }}
+                >
+                  관전으로 전환
+                </button>
+              )}
+              {asSpectator && room && room.players.length < room.maxPlayers && (
+                <button
+                  type="button"
+                  className={styles.startButton}
+                  onClick={() => {
+                    const socket = getSocket();
+                    socket.emit('room:switchRole', (res: { success?: boolean; error?: string }) => {
+                      if (!res?.success) {
+                        alert(res?.error === 'room_full' ? '플레이어 자리가 가득 찼습니다.' : '플레이어 전환에 실패했습니다.');
+                      }
+                    });
+                  }}
+                >
+                  플레이어로 전환
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className={styles.share}>
           <label className={styles.label}>방 링크 (친구에게 공유)</label>
           <div className={styles.shareRow}>

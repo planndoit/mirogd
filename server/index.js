@@ -14,6 +14,7 @@ import {
   joinRoom,
   leaveRoom,
   updateRoomSettings,
+  switchParticipantRole,
   startGame,
   finishPrepAndStartGame,
   setMoveDirection,
@@ -202,6 +203,21 @@ io.on('connection', (socket) => {
     }
     ack?.({ success: true, room: serializeRoom(room) });
     io.to(roomId).emit('room:updated', serializeRoom(room));
+  });
+
+  socket.on('room:switchRole', (ack) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) {
+      ack?.({ success: false, error: 'not_in_room' });
+      return;
+    }
+    const result = switchParticipantRole(roomId, socket.id);
+    if (!result.success || !result.room) {
+      ack?.({ success: false, error: result.error || 'switch_failed' });
+      return;
+    }
+    ack?.({ success: true, asSpectator: result.asSpectator, room: serializeRoom(result.room) });
+    io.to(roomId).emit('room:updated', serializeRoom(result.room));
   });
 
   socket.on('game:start', (ack) => {

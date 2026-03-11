@@ -284,6 +284,55 @@ export function updateRoomSettings(roomId, { maxPlayers, gameTimeSeconds }, sock
   return room;
 }
 
+export function switchParticipantRole(roomId, socketId) {
+  const room = rooms.get(roomId);
+  if (!room || room.status !== 'waiting') return { success: false, error: 'not_waiting' };
+
+  const playerIndex = room.players.findIndex((p) => p.socketId === socketId);
+  const spectatorIndex = room.spectators.findIndex((s) => s.socketId === socketId);
+
+  if (playerIndex === -1 && spectatorIndex === -1) {
+    return { success: false, error: 'not_in_room' };
+  }
+
+  if (playerIndex >= 0) {
+    const [player] = room.players.splice(playerIndex, 1);
+    room.spectators.push({
+      sessionId: player.sessionId,
+      socketId: player.socketId,
+      nickname: player.nickname,
+      type: 'spectator',
+      role: null,
+      isHost: false,
+      disconnectedAt: null,
+      disconnectTimerId: null,
+    });
+    // 방장은 항상 플레이어만 가능하도록 유지
+    if (room.hostSocketId === socketId) {
+      syncHost(room);
+    }
+    return { success: true, room, asSpectator: true };
+  }
+
+  // spectator -> player
+  if (room.players.length >= room.maxPlayers) {
+    return { success: false, error: 'room_full' };
+  }
+
+  const [spectator] = room.spectators.splice(spectatorIndex, 1);
+  room.players.push({
+    sessionId: spectator.sessionId,
+    socketId: spectator.socketId,
+    nickname: spectator.nickname,
+    type: 'player',
+    role: null,
+    isHost: false,
+    disconnectedAt: null,
+    disconnectTimerId: null,
+  });
+  return { success: true, room, asSpectator: false };
+}
+
 export function getAllRooms() {
   return Array.from(rooms.values());
 }

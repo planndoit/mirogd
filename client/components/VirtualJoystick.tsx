@@ -76,7 +76,6 @@ export default function VirtualJoystick({
   );
 
   const handlePointerDown = (e: React.PointerEvent) => {
-    if (useTouchEvents) return;
     if (disabled) return;
     containerRef.current?.setPointerCapture(e.pointerId);
     activePointerIdRef.current = e.pointerId;
@@ -85,13 +84,11 @@ export default function VirtualJoystick({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (useTouchEvents) return;
     if (!active || disabled || activePointerIdRef.current !== e.pointerId) return;
     updateFromClient(e.clientX, e.clientY);
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
-    if (useTouchEvents) return;
     if (activePointerIdRef.current !== e.pointerId) return;
     containerRef.current?.releasePointerCapture(e.pointerId);
     resetJoystick();

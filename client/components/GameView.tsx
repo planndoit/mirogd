@@ -116,8 +116,11 @@ export default function GameView({
         if (!g?.maze?.length) return;
         mazeGraphics.clear();
         const cellSize = getCellSize();
-        const offsetX = (app.renderer.width - cols * cellSize) / 2;
-        const offsetY = (app.renderer.height - rows * cellSize) / 2;
+        const canvasSize = Math.min(app.renderer.width, app.renderer.height);
+        const mazeWidth = cols * cellSize;
+        const mazeHeight = rows * cellSize;
+        const offsetX = (canvasSize - mazeWidth) / 2;
+        const offsetY = (canvasSize - mazeHeight) / 2;
         const gap = Math.max(1, Math.floor(cellSize * 0.08));
         const inset = gap / 2;
         const PATH_LIGHT = 0x90c267;
@@ -311,6 +314,12 @@ export default function GameView({
       };
       app.ticker.add(tick);
 
+      // 브라우저 UI가 안정된 뒤 한 번 더 강제 리사이즈
+      setTimeout(() => {
+        if (!app.renderer) return;
+        onResize();
+      }, 150);
+
       return () => {
         app.ticker.remove(tick);
         app.renderer.off('resize', onResize);
@@ -363,9 +372,10 @@ export default function GameView({
           {myRole === 'police' && '경찰'}
           {myRole === 'thief' && '도둑'}
         </span>
-        {timeLeft !== null && game?.winner !== 'police' && game?.winner !== 'thief' && (
-          <span className={styles.timer}>{timeLeft}초</span>
-        )}
+        <span className={styles.timer}>
+          {timeLeft !== null && game?.winner !== 'police' && game?.winner !== 'thief' ? `${timeLeft}초 · ` : ''}
+          플레이어 {players.length} · 관전자 {spectators.length}
+        </span>
       </header>
 
       <div className={`${styles.canvasWrap} ${styles.pixiContainer}`} ref={containerRef} />
