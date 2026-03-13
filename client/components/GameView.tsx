@@ -353,14 +353,15 @@ export default function GameView({
     return () => {
       cleanup?.();
       // 이 effect에서 생성한 인스턴스만 정리한다.
-      if (localApp && !localApp.renderer.destroyed) {
+      if (localApp) {
         const canvas = localApp.canvas as HTMLCanvasElement | undefined;
         localApp.destroy(true);
         if (canvas && canvas.parentNode) {
           canvas.parentNode.removeChild(canvas);
         }
       }
-      if (appRef.current?.renderer?.destroyed) {
+      // 현재 전역 참조가 이 effect에서 만든 인스턴스라면 함께 정리
+      if (appRef.current === localApp) {
         appRef.current = null;
       }
     };
