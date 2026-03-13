@@ -300,15 +300,16 @@ export default function GameView({
       };
       app.renderer.on('resize', onResize);
 
-      // flex 레이아웃/모바일 주소창/DevTools 뷰 전환 등에서
-      // 컨테이너 크기 변화에 맞춰 안전하게 다시 그린다.
+      // 컨테이너 크기 변화 시, Pixi resizeTo가 먼저 반영된 뒤 한 프레임 지연해서 재그리기.
+      // (역할 배정 등으로 레이아웃이 바뀔 때 renderer 크기가 아직 갱신 전에 onResize가 호출되는 것 방지)
       const ro = new ResizeObserver(() => {
         const w = container.clientWidth;
         const h = container.clientHeight;
-        // 매우 작은 값(레이아웃 전환 직후 0 또는 근접값)일 때는
-        // Pixi 내부 resizeTo 처리와 renderer resize 이벤트를 기다린다.
-        if (!w || !h || w < 80 || h < 80) return;
-        onResize();
+        if (!w || !h) return;
+        requestAnimationFrame(() => {
+          if (!app?.renderer) return;
+          onResize();
+        });
       });
       ro.observe(container);
 
@@ -325,13 +326,13 @@ export default function GameView({
       };
       app.ticker.add(tick);
 
-      // 브라우저 UI가 안정된 뒤 한 번 더 강제 리사이즈
-      setTimeout(() => {
-        if (!app.renderer) return;
-        onResize();
-      }, 150);
+      // 브라우저/레이아웃 안정 후 재그리기 (준비→역할 배정 시점 포함)
+      const t1 = setTimeout(() => { if (app?.renderer) onResize(); }, 150);
+      const t2 = setTimeout(() => { if (app?.renderer) onResize(); }, 500);
 
       return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
         app.ticker.remove(tick);
         app.renderer.off('resize', onResize);
         ro.disconnect();
@@ -394,7 +395,7 @@ export default function GameView({
         <div className={styles.pixiContainer} ref={containerRef} />
       </div>
 
-      {prepLeft !== null && prepLeft > 0 && (
+      {game.prepEndAt && prepLeft !== null && prepLeft > 0 && (
         <div className={styles.prepOverlay}>
           <div className={styles.prepText}>{prepLeft}</div>
         </div>
