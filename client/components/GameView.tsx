@@ -286,6 +286,8 @@ export default function GameView({
       updateCharacterNodes();
 
       const onResize = () => {
+        // Pixi의 resize 이벤트가 먼저/나중에 오더라도,
+        // 실제 렌더러 크기 기준으로 항상 맵/캐릭터를 재배치한다.
         drawMaze();
         const g = gameRef.current;
         if (g?.positions) {
@@ -297,6 +299,20 @@ export default function GameView({
         updateCharacterNodes();
       };
       app.renderer.on('resize', onResize);
+
+      // flex 레이아웃/모바일 주소창/DevTools 뷰 전환 등에서
+      // resizeTo가 간헐적으로 0 또는 반쪽 크기를 잡는 케이스를 보강한다.
+      const ro = new ResizeObserver(() => {
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        if (!w || !h) return;
+        if (app?.renderer && (app.renderer.width !== w || app.renderer.height !== h)) {
+          // pixi 내부에서 이미 처리했더라도, 최종값이 어긋나면 바로잡는다.
+          app.renderer.resize(w, h);
+        }
+        onResize();
+      });
+      ro.observe(container);
 
       const tick = () => {
         updateCharacterNodes();
@@ -320,6 +336,7 @@ export default function GameView({
       return () => {
         app.ticker.remove(tick);
         app.renderer.off('resize', onResize);
+        ro.disconnect();
       };
     };
 
@@ -375,7 +392,9 @@ export default function GameView({
         </span>
       </header>
 
-      <div className={`${styles.canvasWrap} ${styles.pixiContainer}`} ref={containerRef} />
+      <div className={styles.canvasWrap}>
+        <div className={styles.pixiContainer} ref={containerRef} />
+      </div>
 
       {game?.winner && (
         <div className={styles.resultOverlay}>

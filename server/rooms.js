@@ -9,6 +9,7 @@ const rooms = new Map();
 const PREP_SECONDS = 10;
 const CATCH_RADIUS = 0.5; // 거리 이내면 잡힘 (연속 좌표)
 const MOVE_SPEED = 3; // 셀/초
+const POLICE_SPEED_MULTIPLIER = 1.1;
 const MOVE_TICK_MS = 50;
 const DISCONNECT_GRACE_MS = 90 * 1000;
 const PATH = 0;
@@ -418,8 +419,10 @@ export function updatePositions(roomId) {
     const dir = directions[socketId];
     if (!dir?.moving) continue;
 
-    const dx = dir.x * MOVE_SPEED * dt;
-    const dy = dir.y * MOVE_SPEED * dt;
+    const role = room.status === 'playing' ? room.game.roles?.[socketId] : null;
+    const speed = role === 'police' ? MOVE_SPEED * POLICE_SPEED_MULTIPLIER : MOVE_SPEED;
+    const dx = dir.x * speed * dt;
+    const dy = dir.y * speed * dt;
 
     const nextX = clamp(pos.x + dx, cols);
     if (isWalkable(maze, nextX, pos.y)) {

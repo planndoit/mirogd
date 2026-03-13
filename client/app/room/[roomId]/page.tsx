@@ -162,6 +162,20 @@ export default function RoomPage() {
       setRoom(updated);
       if (updated.game) setGameState(updated.game);
       if (updated.status === 'waiting' && !updated.game) setGameState(null);
+      const amPlayer = updated.players.some(
+        (p) => p.socketId === mySocketId || (myNickname && p.nickname === myNickname)
+      );
+      const amSpectator = updated.spectators.some(
+        (s) => s.socketId === mySocketId || (myNickname && s.nickname === myNickname)
+      );
+      setAsSpectator(Boolean(amSpectator && !amPlayer));
+      setIsHost(
+        updated.players.some(
+          (p) =>
+            (p.socketId === mySocketId || (myNickname && p.nickname === myNickname)) &&
+            p.isHost
+        )
+      );
     };
 
     const onGameState = (game: GameState) => {
@@ -218,7 +232,7 @@ export default function RoomPage() {
       socket.off('game:ended', onGameEnded);
       socket.off('connect', onConnect);
     };
-  }, [joinCurrentRoom, roomId]);
+  }, [joinCurrentRoom, roomId, mySocketId, myNickname]);
 
   useEffect(() => {
     const nextStatus = room?.status ?? null;
@@ -412,12 +426,12 @@ export default function RoomPage() {
                     const socket = getSocket();
                     socket.emit('room:switchRole', (res: { success?: boolean; error?: string }) => {
                       if (!res?.success && res?.error !== 'not_in_room') {
-                        alert('관전 전환에 실패했습니다.');
+                        alert('관전하기 전환에 실패했습니다.');
                       }
                     });
                   }}
                 >
-                  관전으로 전환
+                  관전하기
                 </button>
               )}
               {asSpectator && room && room.players.length < room.maxPlayers && (
@@ -428,12 +442,12 @@ export default function RoomPage() {
                     const socket = getSocket();
                     socket.emit('room:switchRole', (res: { success?: boolean; error?: string }) => {
                       if (!res?.success) {
-                        alert(res?.error === 'room_full' ? '플레이어 자리가 가득 찼습니다.' : '플레이어 전환에 실패했습니다.');
+                        alert(res?.error === 'room_full' ? '플레이어 자리가 가득 찼습니다.' : '참여하기 전환에 실패했습니다.');
                       }
                     });
                   }}
                 >
-                  플레이어로 전환
+                  참여하기
                 </button>
               )}
             </div>
