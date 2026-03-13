@@ -47,12 +47,13 @@ export default function GameView({
   const allParticipants = [...players, ...spectators];
   const getNickname = (socketId: string) => allParticipants.find((p) => p.socketId === socketId)?.nickname ?? '?';
 
-  // Pixi 애플리케이션은 게임 상태 객체가 바뀔 때마다 완전히 재초기화한다.
-  // (준비 → 역할 배정 등 상태 전환 시 레이아웃/리사이즈 타이밍 꼬임으로 인한 빈 화면을 방지)
   useEffect(() => {
     if (!game?.maze?.length || !containerRef.current) return;
     const container = containerRef.current;
     let app: import('pixi.js').Application;
+    // 이 effect에서 생성한 Pixi 인스턴스를 로컬로 기억해 두고, cleanup 시에만 사용한다.
+    // (비동기 init 중 다른 effect가 돌더라도 서로의 인스턴스를 건드리지 않도록 분리)
+    let localApp: import('pixi.js').Application | null = null;
     let mazeGraphics: import('pixi.js').Graphics;
     let charactersContainer: import('pixi.js').Container;
     const displayPos = new Map<string, { x: number; y: number }>();
@@ -81,6 +82,7 @@ export default function GameView({
       app.canvas.style.display = 'block';
       app.canvas.style.width = '100%';
       app.canvas.style.height = '100%';
+      localApp = app;
       appRef.current = app;
 
       const rows = game.maze.length;
@@ -335,25 +337,34 @@ export default function GameView({
       return () => {
         clearTimeout(t1);
         clearTimeout(t2);
-        app.ticker.remove(tick);
-        app.renderer.off('resize', onResize);
+        if (localApp) {
+          localApp.ticker.remove(tick);
+          localApp.renderer.off('resize', onResize);
+        }
         ro.disconnect();
       };
     };
 
     let cleanup: (() => void) | undefined;
-    init().then((c) => { cleanup = c; });
+    init().then((c) => {
+      cleanup = c;
+    });
 
     return () => {
       cleanup?.();
-      if (appRef.current && container.contains(appRef.current.canvas as Node)) {
-        const canvas = appRef.current.canvas;
-        appRef.current.destroy(true);
-        if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas);
+      // 이 effect에서 생성한 인스턴스만 정리한다.
+      if (localApp && !localApp.renderer.destroyed) {
+        const canvas = localApp.canvas as HTMLCanvasElement | undefined;
+        localApp.destroy(true);
+        if (canvas && canvas.parentNode) {
+          canvas.parentNode.removeChild(canvas);
+        }
+      }
+      if (appRef.current?.renderer?.destroyed) {
         appRef.current = null;
       }
     };
-  }, [game]);
+  }, [game?.maze]);
 
   useEffect(() => {
     if (!game) return;
