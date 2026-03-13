@@ -107,7 +107,6 @@ export default function VirtualJoystick({
     if (!useTouchEvents || disabled || activeTouchIdRef.current === null) return;
     const touch = Array.from(e.changedTouches).find((item) => item.identifier === activeTouchIdRef.current);
     if (!touch) return;
-    e.preventDefault();
     updateFromClient(touch.clientX, touch.clientY);
   };
 
