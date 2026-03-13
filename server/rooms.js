@@ -331,6 +331,9 @@ export function switchParticipantRole(roomId, socketId) {
     disconnectedAt: null,
     disconnectTimerId: null,
   });
+  // 플레이어가 1명뿐이거나, 기존 방장이 더 이상 플레이어가 아닌 경우
+  // 적절한 방장을 다시 계산한다.
+  syncHost(room);
   return { success: true, room, asSpectator: false };
 }
 
