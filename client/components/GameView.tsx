@@ -290,7 +290,6 @@ export default function GameView({
       updateCharacterNodes();
 
       const onResize = () => {
-        // 렌더러 크기가 안정된 뒤 현재 게임 상태를 기준으로 다시 그린다.
         if (!app?.renderer?.width || !app.renderer.height) return;
         drawMaze();
         const g = gameRef.current;
@@ -303,19 +302,6 @@ export default function GameView({
         updateCharacterNodes();
       };
       app.renderer.on('resize', onResize);
-
-      // 컨테이너 크기 변화 시, Pixi resizeTo가 먼저 반영된 뒤 한 프레임 지연해서 재그리기.
-      // (역할 배정 등으로 레이아웃이 바뀔 때 renderer 크기가 아직 갱신 전에 onResize가 호출되는 것 방지)
-      const ro = new ResizeObserver(() => {
-        const w = container.clientWidth;
-        const h = container.clientHeight;
-        if (!w || !h) return;
-        requestAnimationFrame(() => {
-          if (!app?.renderer) return;
-          onResize();
-        });
-      });
-      ro.observe(container);
 
       const tick = () => {
         updateCharacterNodes();
@@ -330,18 +316,11 @@ export default function GameView({
       };
       app.ticker.add(tick);
 
-      // 브라우저/레이아웃 안정 후 재그리기 (준비→역할 배정 시점 포함)
-      const t1 = setTimeout(() => { if (app?.renderer) onResize(); }, 150);
-      const t2 = setTimeout(() => { if (app?.renderer) onResize(); }, 500);
-
       return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
         if (localApp) {
           localApp.ticker.remove(tick);
           localApp.renderer.off('resize', onResize);
         }
-        ro.disconnect();
       };
     };
 
