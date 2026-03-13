@@ -47,6 +47,8 @@ export default function GameView({
   const allParticipants = [...players, ...spectators];
   const getNickname = (socketId: string) => allParticipants.find((p) => p.socketId === socketId)?.nickname ?? '?';
 
+  // Pixi 애플리케이션은 게임 상태 객체가 바뀔 때마다 완전히 재초기화한다.
+  // (준비 → 역할 배정 등 상태 전환 시 레이아웃/리사이즈 타이밍 꼬임으로 인한 빈 화면을 방지)
   useEffect(() => {
     if (!game?.maze?.length || !containerRef.current) return;
     const container = containerRef.current;
@@ -351,7 +353,7 @@ export default function GameView({
         appRef.current = null;
       }
     };
-  }, [game?.maze]);
+  }, [game]);
 
   useEffect(() => {
     if (!game) return;
