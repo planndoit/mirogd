@@ -6,7 +6,6 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://mirogd.vercel.app';
 export const metadata: Metadata = {
   title: '미로 속 경찰과 도둑',
   description: '친구와 함께하는 실시간 미로 추격 게임',
-  appleWebApp: { capable: true, statusBarStyle: 'black-translucent' },
   metadataBase: new URL(siteUrl),
   openGraph: {
     title: '미로 속 경찰과 도둑',
@@ -46,6 +45,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
+      <head>
+        <meta name="mobile-web-app-capable" content="yes" />
+      </head>
       <body>{children}</body>
     </html>
   );
