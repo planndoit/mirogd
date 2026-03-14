@@ -44,16 +44,22 @@ export default function GameView({
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [prepLeft, setPrepLeft] = useState<number | null>(null);
 
-  const allParticipants = [...players, ...spectators];
-  const getNickname = (socketId: string) => allParticipants.find((p) => p.socketId === socketId)?.nickname ?? '?';
+  const allParticipantsRef = useRef([...players, ...spectators]);
+  allParticipantsRef.current = [...players, ...spectators];
+  const getNickname = (socketId: string) => allParticipantsRef.current.find((p) => p.socketId === socketId)?.nickname ?? '?';
+
+  const hasMaze = !!game?.maze?.length;
+  const mazeRows = game?.maze?.length ?? 0;
+  const mazeCols = game?.maze?.[0]?.length ?? 0;
+  const mazeKey = `${mazeRows}x${mazeCols}`;
 
   useEffect(() => {
-    if (!game?.maze?.length || !containerRef.current) return;
+    if (!hasMaze || !containerRef.current) return;
     const container = containerRef.current;
     let app: import('pixi.js').Application;
-    // 이 effect에서 생성한 Pixi 인스턴스를 로컬로 기억해 두고, cleanup 시에만 사용한다.
-    // (비동기 init 중 다른 effect가 돌더라도 서로의 인스턴스를 건드리지 않도록 분리)
     let localApp: import('pixi.js').Application | null = null;
+    let cancelled = false;
+
     let mazeGraphics: import('pixi.js').Graphics;
     let charactersContainer: import('pixi.js').Container;
     const displayPos = new Map<string, { x: number; y: number }>();
@@ -71,6 +77,8 @@ export default function GameView({
 
     const init = async () => {
       const PIXI = await import('pixi.js');
+      if (cancelled) return;
+
       app = new PIXI.Application();
       await app.init({
         resizeTo: container,
@@ -78,6 +86,16 @@ export default function GameView({
         antialias: true,
         resolution: Math.min(2, typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1),
       });
+
+      if (cancelled) {
+        app.destroy(true);
+        return;
+      }
+
+      // Clean up any orphaned canvases from previous failed inits
+      const orphanedCanvases = container.querySelectorAll('canvas');
+      orphanedCanvases.forEach(c => c.remove());
+
       container.appendChild(app.canvas as HTMLCanvasElement);
       app.canvas.style.display = 'block';
       app.canvas.style.width = '100%';
@@ -85,8 +103,8 @@ export default function GameView({
       localApp = app;
       appRef.current = app;
 
-      const rows = game.maze.length;
-      const cols = game.maze[0].length;
+      const rows = mazeRows;
+      const cols = mazeCols;
 
       const getCellSize = () => {
         const w = app.renderer.width;
@@ -289,6 +307,13 @@ export default function GameView({
       drawMaze();
       updateCharacterNodes();
 
+      // Delayed redraw to ensure layout is finalized
+      requestAnimationFrame(() => {
+        if (cancelled || !app?.renderer) return;
+        drawMaze();
+        updateCharacterNodes();
+      });
+
       const onResize = () => {
         if (!app?.renderer?.width || !app.renderer.height) return;
         drawMaze();
@@ -330,8 +355,8 @@ export default function GameView({
     });
 
     return () => {
+      cancelled = true;
       cleanup?.();
-      // 이 effect에서 생성한 인스턴스만 정리한다.
       if (localApp) {
         const canvas = localApp.canvas as HTMLCanvasElement | undefined;
         localApp.destroy(true);
@@ -339,12 +364,12 @@ export default function GameView({
           canvas.parentNode.removeChild(canvas);
         }
       }
-      // 현재 전역 참조가 이 effect에서 만든 인스턴스라면 함께 정리
       if (appRef.current === localApp) {
         appRef.current = null;
       }
     };
-  }, [game?.maze]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mazeKey]);
 
   useEffect(() => {
     if (!game) return;

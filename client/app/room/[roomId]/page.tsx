@@ -160,7 +160,17 @@ export default function RoomPage() {
 
     const onUpdated = (updated: Room) => {
       setRoom(updated);
-      if (updated.game) setGameState(updated.game);
+      if (updated.game) {
+        setGameState(prev => {
+          const next = updated.game!;
+          if (prev?.maze && next.maze &&
+              prev.maze.length === next.maze.length &&
+              prev.maze[0]?.length === next.maze[0]?.length) {
+            return { ...next, maze: prev.maze };
+          }
+          return next;
+        });
+      }
       if (updated.status === 'waiting' && !updated.game) setGameState(null);
       const amPlayer = updated.players.some(
         (p) => p.socketId === mySocketId || (myNickname && p.nickname === myNickname)
@@ -179,7 +189,14 @@ export default function RoomPage() {
     };
 
     const onGameState = (game: GameState) => {
-      setGameState(game);
+      setGameState(prev => {
+        if (prev?.maze && game.maze &&
+            prev.maze.length === game.maze.length &&
+            prev.maze[0]?.length === game.maze[0]?.length) {
+          return { ...game, maze: prev.maze };
+        }
+        return game;
+      });
     };
 
     const onGamePositions = (positions: Record<string, { x: number; y: number }>) => {
